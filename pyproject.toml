@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nrpc-client"
+version = "0.1.0"
+description = "Typed synchronous Python client for the nRPC protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Nora Vale", email = "nora.vale@nrpc.local" },
+]
+keywords = ["rpc", "tcp", "scpi", "instrumentation", "libuv"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Hardware",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nrpc*"]
+
+[tool.setuptools.package-data]
+nrpc = ["py.typed"]
+

@@ -1,0 +1,397 @@
+from __future__ import annotations
+
+import socket
+import struct
+import threading
+from dataclasses import dataclass
+from enum import IntEnum
+from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
+
+if TYPE_CHECKING:
+    from .serial_backend import (
+        SerialBackend,
+        SerialFlowControl,
+        SerialParity,
+    )
+    from .tcp_backend import TcpBackend
+
+MAGIC = 0xF0
+VERSION = 0x01
+HEADER_SIZE = 16
+VARIABLE_SIZE = 16
+MAX_VARIABLES = 255
+DEFAULT_MAX_PAYLOAD = 16 * 1024 * 1024
+
+NrpcScalar: TypeAlias = None | bool | int | float | str | bytes
+
+
+class DataType(IntEnum):
+    """nRPC wire-level variable type codes."""
+    NULL = 0x00
+    INT8 = 0x01
+    UINT8 = 0x02
+    INT16 = 0x03
+    UINT16 = 0x04
+    INT32 = 0x05
+    UINT32 = 0x06
+    INT64 = 0x07
+    UINT64 = 0x08
+    FLOAT32 = 0x09
+    FLOAT64 = 0x10
+    BOOL = 0xA0
+    STRING = 0xA1
+    BYTES = 0xA2
+
+
+_FORMATS = {
+    DataType.INT8: "b",
+    DataType.UINT8: "B",
+    DataType.INT16: "h",
+    DataType.UINT16: "H",
+    DataType.INT32: "i",
+    DataType.UINT32: "I",
+    DataType.INT64: "q",
+    DataType.UINT64: "Q",
+    DataType.FLOAT32: "f",
+    DataType.FLOAT64: "d",
+}
+
+
+class NrpcError(Exception):
+    """Base exception for nRPC-specific failures."""
+
+    pass
+
+
+class ProtocolError(NrpcError):
+    """Raised when a peer response violates the nRPC wire protocol."""
+
+    pass
+
+
+class RemoteError(NrpcError):
+    """Error returned by a remote nRPC backend."""
+
+    def __init__(self, code: int, function_index: int):
+        self.code = code
+        self.function_index = function_index
+        super().__init__(
+            f"nRPC function {function_index} failed with backend error {code}"
+        )
+
+
+@dataclass(frozen=True)
+class TypedValue:
+    """Value paired with an explicit nRPC wire type.
+
+    Numeric and boolean values may be scalars, lists, or tuples. Strings,
+    bytes, and null values follow the constraints of their corresponding wire
+    types.
+    """
+
+    data_type: DataType
+    value: Any
+
+
+NrpcValue: TypeAlias = NrpcScalar | bytearray | memoryview | TypedValue
+
+
+@dataclass(frozen=True)
+class _EncodedValue:
+    data_type: DataType
+    count: int
+    data: bytes
+
+
+def _as_sequence(value: Any) -> tuple[Sequence[Any], bool]:
+    if isinstance(value, (list, tuple)):
+        return value, True
+    return (value,), False
+
+
+def _encode_typed(value: TypedValue) -> _EncodedValue:
+    data_type = value.data_type
+    raw = value.value
+    if data_type == DataType.NULL:
+        if raw is not None:
+            raise ValueError("NULL value must be None")
+        return _EncodedValue(data_type, 0, b"")
+    if data_type == DataType.STRING:
+        if not isinstance(raw, str):
+            raise TypeError("STRING value must be str")
+        data = raw.encode("utf-8") + b"\0"
+        return _EncodedValue(data_type, len(data), data)
+    if data_type == DataType.BYTES:
+        data = bytes(raw)
+        return _EncodedValue(data_type, len(data), data)
+
+    values, _ = _as_sequence(raw)
+    if data_type == DataType.BOOL:
+        if not all(isinstance(item, bool) for item in values):
+            raise TypeError("BOOL values must contain only bool")
+        return _EncodedValue(data_type, len(values), bytes(values))
+    try:
+        data = struct.pack(f"!{len(values)}{_FORMATS[data_type]}", *values)
+    except KeyError as error:
+        raise ValueError(f"unsupported nRPC data type: {data_type!r}") from error
+    return _EncodedValue(data_type, len(values), data)
+
+
+def _encode_value(value: Any) -> _EncodedValue:
+    if isinstance(value, TypedValue):
+        return _encode_typed(value)
+    if value is None:
+        return _encode_typed(TypedValue(DataType.NULL, None))
+    if isinstance(value, bool):
+        return _encode_typed(TypedValue(DataType.BOOL, value))
+    if isinstance(value, int):
+        return _encode_typed(TypedValue(DataType.INT64, value))
+    if isinstance(value, float):
+        return _encode_typed(TypedValue(DataType.FLOAT64, value))
+    if isinstance(value, str):
+        return _encode_typed(TypedValue(DataType.STRING, value))
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return _encode_typed(TypedValue(DataType.BYTES, value))
+    raise TypeError(f"cannot encode {type(value).__name__} as an nRPC value")
+
+
+def _decode_value(data_type: DataType, count: int, data: bytes) -> Any:
+    if data_type == DataType.NULL:
+        if count != 0 or data:
+            raise ProtocolError("invalid NULL response variable")
+        return None
+    if data_type == DataType.STRING:
+        if count != len(data) or not data.endswith(b"\0"):
+            raise ProtocolError("invalid STRING response variable")
+        return data[:-1].decode("utf-8")
+    if data_type == DataType.BYTES:
+        if count != len(data):
+            raise ProtocolError("invalid BYTES response variable")
+        return data
+    if data_type == DataType.BOOL:
+        if count != len(data) or any(item not in (0, 1) for item in data):
+            raise ProtocolError("invalid BOOL response variable")
+        values = tuple(bool(item) for item in data)
+    else:
+        try:
+            item_format = _FORMATS[data_type]
+        except KeyError as error:
+            raise ProtocolError(f"unknown response data type 0x{data_type:02x}") from error
+        item_size = struct.calcsize(item_format)
+        if len(data) != count * item_size:
+            raise ProtocolError("response element count does not match data size")
+        values = struct.unpack(f"!{count}{item_format}", data)
+    return values[0] if count == 1 else list(values)
+
+
+def _encode_request(function_index: int, args: Iterable[Any], timeout: int) -> bytes:
+    if not 0 <= function_index <= 255:
+        raise ValueError("function_index must be between 0 and 255")
+    if not 0 <= timeout <= 0xFFFFFFFF:
+        raise ValueError("timeout must be between 0 and 4294967295 ms")
+    values = [_encode_value(value) for value in args]
+    if len(values) > MAX_VARIABLES:
+        raise ValueError("an nRPC request supports at most 255 variables")
+    table = bytearray()
+    data = bytearray()
+    for value in values:
+        table.extend(
+            struct.pack(
+                "!B3xII4x", value.data_type, len(value.data), value.count
+            )
+        )
+        data.extend(value.data)
+    payload = bytes(table + data)
+    return (
+        struct.pack(
+            "!BBBBIII",
+            MAGIC,
+            VERSION,
+            function_index,
+            len(values),
+            len(payload),
+            timeout,
+            0,
+        )
+        + payload
+    )
+
+
+class NrpcClient:
+    """Persistent synchronous connection to an nRPC server.
+
+    Calls on one client instance are serialized with a lock because nRPC 0.1.0
+    permits one in-flight request per TCP connection. Separate instances can be
+    used concurrently.
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        *,
+        connect_timeout: float | None = 10.0,
+        max_payload_size: int = DEFAULT_MAX_PAYLOAD,
+    ):
+        """Connect to an nRPC server.
+
+        Args:
+            host: Server hostname or IP address.
+            port: Server TCP port.
+            connect_timeout: Socket connection timeout in seconds.
+            max_payload_size: Largest accepted response payload.
+        """
+        self._socket = socket.create_connection((host, port), connect_timeout)
+        self._socket.settimeout(None)
+        self._max_payload_size = max_payload_size
+        self._lock = threading.Lock()
+
+    def close(self) -> None:
+        """Close the nRPC connection. Calling this repeatedly is safe."""
+
+        self._socket.close()
+
+    def __enter__(self) -> NrpcClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    def call(
+        self,
+        function_index: int,
+        args: Iterable[NrpcValue] = (),
+        timeout: int = 0,
+    ) -> list[Any]:
+        """Invoke a remote function and return its decoded response variables.
+
+        Args:
+            function_index: Dispatcher index in the inclusive range 0..255.
+            args: Python values or explicit ``TypedValue`` instances.
+            timeout: Server-side operation timeout in milliseconds; zero means
+                no timeout.
+
+        Raises:
+            RemoteError: The remote backend returned an error.
+            ProtocolError: The response frame was malformed.
+            OSError: The underlying connection failed.
+        """
+        packet = _encode_request(function_index, args, timeout)
+        with self._lock:
+            previous_timeout = self._socket.gettimeout()
+            self._socket.settimeout(None if timeout == 0 else timeout / 1000.0 + 1.0)
+            try:
+                self._socket.sendall(packet)
+                header = self._recv_exact(HEADER_SIZE)
+                status, version, response_index, count, payload_size, error, reserved = (
+                    struct.unpack("!BBBBIII", header)
+                )
+                if version != VERSION:
+                    raise ProtocolError(f"unsupported response version {version}")
+                if response_index != function_index:
+                    raise ProtocolError("response function index does not match request")
+                if reserved != 0:
+                    raise ProtocolError("response reserved field is not zero")
+                if payload_size > self._max_payload_size:
+                    raise ProtocolError("response payload exceeds configured limit")
+                payload = self._recv_exact(payload_size)
+            finally:
+                self._socket.settimeout(previous_timeout)
+        if status == 1:
+            if count != 0 or payload_size != 0:
+                raise ProtocolError("error response contains variables")
+            raise RemoteError(error, response_index)
+        if status != 0:
+            raise ProtocolError(f"invalid response status {status}")
+        if error != 0:
+            raise ProtocolError("successful response contains an error code")
+        return self._decode_payload(count, payload)
+
+    def open_tcp_backend(
+        self, host: str, port: int, *, timeout: int = 5000
+    ) -> "TcpBackend":
+        """Open a server-side TCP socket and return its client proxy."""
+
+        from .tcp_backend import TcpBackend
+
+        return TcpBackend(self, host, port, timeout=timeout)
+
+    def open_serial_backend(
+        self,
+        port: str,
+        *,
+        baud_rate: int = 9600,
+        data_bits: int = 8,
+        parity: "SerialParity | None" = None,
+        stop_bits: int = 1,
+        flow_control: "SerialFlowControl | None" = None,
+        timeout: int = 5000,
+    ) -> "SerialBackend":
+        """Open a server-side serial port and return its client proxy."""
+
+        from .serial_backend import (
+            SerialBackend,
+            SerialFlowControl,
+            SerialParity,
+        )
+
+        return SerialBackend(
+            self,
+            port,
+            baud_rate=baud_rate,
+            data_bits=data_bits,
+            parity=SerialParity.NONE if parity is None else parity,
+            stop_bits=stop_bits,
+            flow_control=(
+                SerialFlowControl.NONE
+                if flow_control is None
+                else flow_control
+            ),
+            timeout=timeout,
+        )
+
+    def _recv_exact(self, size: int) -> bytes:
+        chunks = bytearray()
+        while len(chunks) < size:
+            chunk = self._socket.recv(size - len(chunks))
+            if not chunk:
+                raise ConnectionError("nRPC connection closed before response completed")
+            chunks.extend(chunk)
+        return bytes(chunks)
+
+    @staticmethod
+    def _decode_payload(count: int, payload: bytes) -> list[Any]:
+        table_size = count * VARIABLE_SIZE
+        if table_size > len(payload):
+            raise ProtocolError("truncated response variable table")
+        entries: list[tuple[DataType, int, int]] = []
+        for offset in range(0, table_size, VARIABLE_SIZE):
+            entry = payload[offset : offset + VARIABLE_SIZE]
+            type_code, reserved1, data_size, element_count, reserved2 = (
+                struct.unpack("!B3sII4s", entry)
+            )
+            if reserved1 != b"\0\0\0" or reserved2 != b"\0\0\0\0":
+                raise ProtocolError(
+                    "response variable reserved fields are not zero"
+                )
+            try:
+                data_type = DataType(type_code)
+            except ValueError as error:
+                raise ProtocolError(
+                    f"unknown response data type 0x{type_code:02x}"
+                ) from error
+            entries.append((data_type, data_size, element_count))
+
+        values: list[Any] = []
+        offset = table_size
+        for data_type, data_size, element_count in entries:
+            end = offset + data_size
+            if end > len(payload):
+                raise ProtocolError("truncated response variable data")
+            values.append(
+                _decode_value(data_type, element_count, payload[offset:end])
+            )
+            offset = end
+        if offset != len(payload):
+            raise ProtocolError("response payload contains trailing bytes")
+        return values
