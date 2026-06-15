@@ -16,10 +16,12 @@ from .client import (
 )
 
 if TYPE_CHECKING:
+    from .async_lcard_backend import AsyncLCardBackend
     from .async_serial_backend import (
         AsyncSerialBackend,
     )
     from .async_tcp_backend import AsyncTcpBackend
+    from .lcard_backend import LCardBoardType
     from .serial_backend import SerialFlowControl, SerialParity
 
 
@@ -138,6 +140,22 @@ class AsyncNrpcClient:
         from .async_tcp_backend import AsyncTcpBackend
 
         return await AsyncTcpBackend.open(self, host, port, timeout=timeout)
+
+    async def open_lcard_backend(
+        self,
+        board: "LCardBoardType",
+        slot: int = 0,
+        *,
+        bios: str = "",
+        timeout: int = 5000,
+    ) -> "AsyncLCardBackend":
+        """Open a server-side LCard device and return its async proxy."""
+
+        from .async_lcard_backend import AsyncLCardBackend
+
+        return await AsyncLCardBackend.open(
+            self, board, slot, bios=bios, timeout=timeout
+        )
 
     async def open_serial_backend(
         self,

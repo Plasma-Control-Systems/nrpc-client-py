@@ -50,3 +50,29 @@ python examples/serial_scpi.py \
 ```
 
 On Windows, use a port name such as `COM7`.
+
+## LCard Device
+
+On Windows, inspect slot `0` and read one asynchronous ADC sample:
+
+```powershell
+python examples/lcard_device.py `
+  --nrpc-port 9000 `
+  --board E140 `
+  --slot 0 `
+  --adc-channel 0
+```
+
+Pass a BIOS or PLD path when the board requires one, and optionally exercise
+TTL or DAC output:
+
+```powershell
+python examples/lcard_device.py `
+  --board E140 `
+  --bios C:\LCard\BIOS\L761.bio `
+  --ttl-output 0xA525 `
+  --dac-output 123
+```
+
+The nRPC server must be built on Windows with the LCard backend enabled and
+the matching lcomp/wlcomp installation available.

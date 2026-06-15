@@ -1,12 +1,20 @@
 import unittest
 
 from nrpc import (
+    AsyncLCardBackend,
     AsyncSerialBackend,
     AsyncTcpBackend,
     DataType,
+    AsyncE310Backend,
     SerialFlowControl,
     SerialParity,
     TypedValue,
+)
+from nrpc.lcard_backend import (
+    LCARD_CLOSE,
+    LCARD_IO_ASYNC,
+    LCARD_OPEN,
+    LCardBoardType,
 )
 from nrpc.serial_backend import (
     SERIAL_CLOSE,
@@ -24,13 +32,18 @@ class FakeAsyncClient:
 
     async def call(self, function, args=(), timeout=0):
         self.calls.append((function, list(args), timeout))
-        if function in (TCP_OPEN, SERIAL_OPEN):
+        if function in (TCP_OPEN, SERIAL_OPEN, LCARD_OPEN):
             return [77]
         if function in (TCP_WRITE, SERIAL_WRITE):
             return [len(args[1])]
         if function in (TCP_READ, SERIAL_READ):
             return [self.reads.pop(0)]
         if function in (TCP_CLOSE, SERIAL_CLOSE):
+            return []
+        if function == LCARD_IO_ASYNC:
+            count = args[4].value
+            return [1000.0, list(range(42, 42 + count))]
+        if function == LCARD_CLOSE:
             return []
         raise AssertionError(function)
 
@@ -80,3 +93,21 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await AsyncSerialBackend.open(client, "COM7", data_bits=9)
         self.assertEqual(client.calls, [])
+
+    async def test_lcard_backend_runs_async_io_and_closes(self):
+        client = FakeAsyncClient()
+        async with await AsyncLCardBackend.open(
+            client, LCardBoardType.E310, 3, bios="e310", timeout=100
+        ) as backend:
+            self.assertIsInstance(backend, AsyncE310Backend)
+            await backend.configure_adc(0x30)
+            self.assertEqual(await backend.read_adc(), (42, 43, 44, 45))
+
+        self.assertEqual(
+            client.calls[0][1][0], TypedValue(DataType.UINT32, 3)
+        )
+        self.assertEqual(
+            client.calls[0][1][1],
+            TypedValue(DataType.UINT32, LCardBoardType.E310.value),
+        )
+        self.assertEqual(client.calls[-1][0], LCARD_CLOSE)

@@ -130,6 +130,34 @@ according to the operating system.
 `AsyncNrpcClient.open_serial_backend` returns an `AsyncSerialBackend` with
 async `write`, `read`, `read_until`, and `close` methods.
 
+## LCard Backend
+
+On a Windows server built with the LCard lcomp/wlcomp backend,
+`LCardBackend` opens a board by slot and provides the wrapper's common
+asynchronous ADC, TTL, and DAC operations:
+
+```python
+from nrpc import E140Backend, LCardBoardType, NrpcClient
+
+with NrpcClient("127.0.0.1", 9000) as client:
+    with client.open_lcard_backend(
+        LCardBoardType.E140, slot=0, bios="e140"
+    ) as device:
+        assert isinstance(device, E140Backend)
+        info = device.slot_info()
+        sample = device.adc_sample(0)
+        device.write_ttl(0xA525)
+        print(info, sample)
+```
+
+The requested board type is checked against the physical slot. The returned
+proxy is device-specific: `L780Backend`, `L791Backend`, `E440Backend`,
+`E140Backend`, `E154Backend`, `E2010Backend`, or `E310Backend`. Their helper
+sets reflect the vendor implementations; for example, E2010 has no
+asynchronous ADC sample helper, E310 reads four configured ADC channels, and
+L791 writes DAC values as a channel pair. The asynchronous client returns the
+matching `Async...Backend` class with awaited helpers.
+
 ## Errors
 
 - `RemoteError`: the server or backend returned an error code.

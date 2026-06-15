@@ -8,6 +8,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
 
 if TYPE_CHECKING:
+    from .lcard_backend import LCardBackend, LCardBoardType
     from .serial_backend import (
         SerialBackend,
         SerialFlowControl,
@@ -315,6 +316,22 @@ class NrpcClient:
         from .tcp_backend import TcpBackend
 
         return TcpBackend(self, host, port, timeout=timeout)
+
+    def open_lcard_backend(
+        self,
+        board: "LCardBoardType",
+        slot: int = 0,
+        *,
+        bios: str = "",
+        timeout: int = 5000,
+    ) -> "LCardBackend":
+        """Open a server-side LCard device and return its client proxy."""
+
+        from .lcard_backend import LCardBackend
+
+        return LCardBackend.open(
+            self, board, slot, bios=bios, timeout=timeout
+        )
 
     def open_serial_backend(
         self,
