@@ -1,8 +1,9 @@
 # nRPC Python Client
 
-`nrpc-client` is the synchronous Python client library for nRPC 0.1.0. It is
-dependency-free, typed, and supports Python 3.10 or newer on Linux, macOS, and
-Windows. The protocol definition is included in [SPEC.md](SPEC.md).
+`nrpc-client` is the synchronous and asynchronous Python client library for
+nRPC 0.1.0. It is dependency-free, typed, and supports Python 3.10 or newer on
+Linux, macOS, and Windows. The protocol definition is included in
+[SPEC.md](SPEC.md).
 
 ## Install
 
@@ -51,6 +52,29 @@ Plain Python values map as follows:
 
 Use `TypedValue` when the exact numeric type or an array is required.
 
+## Async RPC
+
+The asyncio interface uses the same values and exceptions as the synchronous
+client:
+
+```python
+import asyncio
+
+from nrpc import AsyncNrpcClient
+
+
+async def main() -> None:
+    async with AsyncNrpcClient("127.0.0.1", 9000) as client:
+        response = await client.call(0, ["hello"], timeout=1000)
+        print(response)
+
+
+asyncio.run(main())
+```
+
+For explicit lifecycle management, use
+`client = await AsyncNrpcClient.connect(...)` and `await client.close()`.
+
 ## TCP Backend
 
 `TcpBackend` controls a server-side operating-system TCP socket. It is
@@ -68,6 +92,15 @@ with NrpcClient("127.0.0.1", 9000) as client:
 
 Instrument protocols such as SCPI belong in application code and are composed
 from `write`, `read`, and `read_until`.
+
+The asynchronous equivalent is opened and used with `await`:
+
+```python
+async with AsyncNrpcClient("127.0.0.1", 9000) as client:
+    async with await client.open_tcp_backend("192.0.2.10", 5025) as tcp:
+        await tcp.write(b"*IDN?\n", timeout=1000)
+        response = await tcp.read_until(b"\n", timeout=1000)
+```
 
 ## Serial Backend
 
@@ -93,6 +126,9 @@ with NrpcClient("127.0.0.1", 9000) as client:
 
 Use port names such as `/dev/ttyUSB0`, `/dev/cu.usbserial-*`, or `COM7`
 according to the operating system.
+
+`AsyncNrpcClient.open_serial_backend` returns an `AsyncSerialBackend` with
+async `write`, `read`, `read_until`, and `close` methods.
 
 ## Errors
 
