@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
 
 if TYPE_CHECKING:
     from .lcard_backend import LCardBackend, LCardBoardType
+    from .nidaqmx_backend import (
+        NidaqmxCjcSource,
+        NidaqmxTask,
+        NidaqmxTerminalConfig,
+        NidaqmxThermocoupleType,
+    )
     from .serial_backend import (
         SerialBackend,
         SerialFlowControl,
@@ -70,14 +76,90 @@ class ProtocolError(NrpcError):
     pass
 
 
+_FUNCTION_NAMES = {
+    0: "echo values",
+    1: "sleep",
+    16: "open TCP connection",
+    17: "write to TCP connection",
+    18: "read from TCP connection",
+    19: "close TCP connection",
+    32: "open serial port",
+    33: "write to serial port",
+    34: "read from serial port",
+    35: "close serial port",
+    48: "open LCard device",
+    49: "perform LCard asynchronous I/O",
+    50: "read LCard slot information",
+    51: "load LCard BIOS",
+    52: "close LCard device",
+    64: "create NI-DAQmx analog voltage input task",
+    65: "create NI-DAQmx thermocouple input task",
+    66: "create NI-DAQmx analog voltage output task",
+    67: "create NI-DAQmx digital input task",
+    68: "create NI-DAQmx digital output task",
+    69: "start NI-DAQmx task",
+    70: "read NI-DAQmx analog samples",
+    71: "write NI-DAQmx analog samples",
+    72: "read NI-DAQmx digital samples",
+    73: "write NI-DAQmx digital samples",
+    74: "close NI-DAQmx task",
+}
+
+_ERROR_DESCRIPTIONS = {
+    1: "unknown function index",
+    2: "backend raised an exception",
+    3: "sleep expects one uint32 duration",
+    1001: "nRPC protocol error",
+    1002: "request timed out on the server",
+    1003: "server response buffer is exhausted",
+    1004: "internal server error",
+    2001: "invalid TCP arguments",
+    2002: "TCP host resolution failed",
+    2003: "TCP connection failed",
+    2004: "unknown TCP handle",
+    2005: "TCP write failed",
+    2006: "TCP read failed",
+    2007: "TCP operation timed out",
+    3001: "invalid serial arguments",
+    3002: "serial port open failed",
+    3003: "serial port configuration failed",
+    3004: "unknown serial port handle",
+    3005: "serial port write failed",
+    3006: "serial port read failed",
+    3007: "serial port operation timed out",
+    3008: "unsupported serial port operation",
+    4001: "invalid LCard arguments",
+    4002: "LCard library could not be loaded",
+    4003: "LCard device open failed",
+    4004: "unknown LCard handle",
+    4005: "LCard operation failed",
+    4006: "unsupported LCard operation",
+    4007: "LCard operation timed out",
+    5001: "invalid NI-DAQmx arguments",
+    5002: "NI-DAQmx library could not be loaded",
+    5003: "NI-DAQmx task creation failed",
+    5004: "unknown NI-DAQmx task handle",
+    5005: "NI-DAQmx operation failed",
+    5006: "operation is invalid for the NI-DAQmx channel type",
+}
+
+
 class RemoteError(NrpcError):
     """Error returned by a remote nRPC backend."""
 
-    def __init__(self, code: int, function_index: int):
+    def __init__(self, code: int, function_index: int, status: int = 1):
         self.code = code
         self.function_index = function_index
+        self.status = status
+        self.description = _ERROR_DESCRIPTIONS.get(
+            code, "unknown remote backend error"
+        )
+        self.function_name = _FUNCTION_NAMES.get(
+            function_index, "unregistered nRPC function"
+        )
         super().__init__(
-            f"nRPC function {function_index} failed with backend error {code}"
+            f"nRPC function {function_index} ({self.function_name}) failed: "
+            f"{self.description} (status {status}, error code {code})"
         )
 
 
@@ -331,6 +413,72 @@ class NrpcClient:
 
         return LCardBackend.open(
             self, board, slot, bios=bios, timeout=timeout
+        )
+
+    def create_nidaqmx_ai_voltage(
+        self, physical_channel: str, minimum: float = -10.0,
+        maximum: float = 10.0, *,
+        terminal: "NidaqmxTerminalConfig | None" = None,
+        timeout: int = 5000,
+    ) -> "NidaqmxTask":
+        """Create a server-side NI-DAQmx analog-voltage input task."""
+        from .nidaqmx_backend import NidaqmxTask, NidaqmxTerminalConfig
+
+        return NidaqmxTask.create_ai_voltage(
+            self, physical_channel, minimum, maximum,
+            terminal=NidaqmxTerminalConfig.DEFAULT if terminal is None else terminal,
+            timeout=timeout,
+        )
+
+    def create_nidaqmx_ai_thermocouple(
+        self, physical_channel: str, minimum: float, maximum: float,
+        thermocouple_type: "NidaqmxThermocoupleType", *,
+        cjc_source: "NidaqmxCjcSource | None" = None,
+        cjc_value: float = 25.0, cjc_channel: str = "",
+        timeout: int = 5000,
+    ) -> "NidaqmxTask":
+        """Create a server-side NI-DAQmx thermocouple input task."""
+        from .nidaqmx_backend import NidaqmxCjcSource, NidaqmxTask
+
+        return NidaqmxTask.create_ai_thermocouple(
+            self, physical_channel, minimum, maximum, thermocouple_type,
+            cjc_source=NidaqmxCjcSource.BUILT_IN if cjc_source is None else cjc_source,
+            cjc_value=cjc_value, cjc_channel=cjc_channel, timeout=timeout,
+        )
+
+    def create_nidaqmx_ao_voltage(
+        self, physical_channel: str, minimum: float = -10.0,
+        maximum: float = 10.0, *, timeout: int = 5000,
+    ) -> "NidaqmxTask":
+        """Create a server-side NI-DAQmx analog-voltage output task."""
+        from .nidaqmx_backend import NidaqmxTask
+
+        return NidaqmxTask.create_ao_voltage(
+            self, physical_channel, minimum, maximum, timeout=timeout
+        )
+
+    def create_nidaqmx_digital_input(
+        self, lines: str, *, one_channel_for_all_lines: bool = True,
+        timeout: int = 5000,
+    ) -> "NidaqmxTask":
+        """Create a server-side NI-DAQmx digital-input task."""
+        from .nidaqmx_backend import NidaqmxTask
+
+        return NidaqmxTask.create_digital_input(
+            self, lines, one_channel_for_all_lines=one_channel_for_all_lines,
+            timeout=timeout,
+        )
+
+    def create_nidaqmx_digital_output(
+        self, lines: str, *, one_channel_for_all_lines: bool = True,
+        timeout: int = 5000,
+    ) -> "NidaqmxTask":
+        """Create a server-side NI-DAQmx digital-output task."""
+        from .nidaqmx_backend import NidaqmxTask
+
+        return NidaqmxTask.create_digital_output(
+            self, lines, one_channel_for_all_lines=one_channel_for_all_lines,
+            timeout=timeout,
         )
 
     def open_serial_backend(

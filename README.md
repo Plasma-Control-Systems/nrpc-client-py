@@ -158,14 +158,37 @@ asynchronous ADC sample helper, E310 reads four configured ADC channels, and
 L791 writes DAC values as a channel pair. The asynchronous client returns the
 matching `Async...Backend` class with awaited helpers.
 
+## NI-DAQmx Backend
+
+The Windows nRPC server can host NI-DAQmx tasks while this client remains
+platform-independent:
+
+```python
+from nrpc import NidaqmxTerminalConfig, NrpcClient
+
+with NrpcClient("127.0.0.1", 9000) as client:
+    with client.create_nidaqmx_ai_voltage(
+        "Dev1/ai0", terminal=NidaqmxTerminalConfig.DIFFERENTIAL
+    ) as task:
+        task.start()
+        print(task.read(10, timeout=1000))
+```
+
+Factories are provided for voltage and thermocouple inputs, voltage outputs,
+and digital inputs and outputs. `AsyncNrpcClient` provides the same factories;
+its task operations are awaited. Tasks are cleared on close or disconnect.
+
 ## Errors
 
-- `RemoteError`: the server or backend returned an error code.
+- `RemoteError`: the server or backend returned an error. Its message includes
+  readable function and error descriptions in addition to the numeric status
+  and error code.
 - `ProtocolError`: the server response violated the nRPC wire format.
 - `ConnectionError`, `TimeoutError`, and other socket errors: transport failure.
 
-`RemoteError.code` and `RemoteError.function_index` expose the remote failure
-details.
+`RemoteError.code`, `RemoteError.function_index`, `RemoteError.status`,
+`RemoteError.description`, and `RemoteError.function_name` expose the remote
+failure details.
 
 See [`examples/`](examples/) for complete command-line programs.
 

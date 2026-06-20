@@ -11,6 +11,7 @@ from .async_lcard_backend import (
     AsyncL780Backend,
     AsyncL791Backend,
 )
+from .async_nidaqmx_backend import AsyncNidaqmxTask
 from .async_serial_backend import AsyncSerialBackend
 from .async_tcp_backend import AsyncTcpBackend
 from .client import (
@@ -36,6 +37,13 @@ from .lcard_backend import (
     LCardBoardType,
     LCardSlotInfo,
 )
+from .nidaqmx_backend import (
+    NidaqmxChannelType,
+    NidaqmxCjcSource,
+    NidaqmxTask,
+    NidaqmxTerminalConfig,
+    NidaqmxThermocoupleType,
+)
 from .serial_backend import (
     SerialBackend,
     SerialFlowControl,
@@ -48,6 +56,7 @@ __version__ = "0.1.0"
 __all__ = [
     "__version__",
     "AsyncNrpcClient",
+    "AsyncNidaqmxTask",
     "AsyncLCardBackend",
     "AsyncL780Backend",
     "AsyncL791Backend",
@@ -74,6 +83,11 @@ __all__ = [
     "NrpcClient",
     "NrpcError",
     "NrpcValue",
+    "NidaqmxChannelType",
+    "NidaqmxCjcSource",
+    "NidaqmxTask",
+    "NidaqmxTerminalConfig",
+    "NidaqmxThermocoupleType",
     "ProtocolError",
     "RemoteError",
     "SerialBackend",

@@ -17,6 +17,13 @@ Calls function `0`, the sample echo backend:
 python examples/basic_rpc.py --port 9000
 ```
 
+The asynchronous client can call the same backend without blocking the event
+loop:
+
+```sh
+python examples/async_rpc.py --port 9000
+```
+
 ## TCP and SCPI
 
 Routes `*IDN?` through the server-side TCP backend to a SCPI device:
@@ -76,3 +83,24 @@ python examples/lcard_device.py `
 
 The nRPC server must be built on Windows with the LCard backend enabled and
 the matching lcomp/wlcomp installation available.
+
+## NI-DAQmx Voltage Input
+
+On the Windows machine hosting the nRPC server, install the NI-DAQmx runtime
+and connect a device exposed as `Dev1`. Read ten differential voltage samples
+from analog input `ai0` with:
+
+```powershell
+python examples/nidaqmx_voltage_input.py `
+  --nrpc-host 127.0.0.1 `
+  --nrpc-port 9000 `
+  --channel Dev1/ai0 `
+  --minimum -10 `
+  --maximum 10 `
+  --terminal DIFFERENTIAL `
+  --samples 10 `
+  --timeout 1000
+```
+
+The server must be built with `NRPC_ENABLE_NIDAQMX_BACKEND=ON`. Device and
+channel names can be confirmed in NI Measurement & Automation Explorer.

@@ -73,6 +73,8 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(RemoteError) as raised:
                 await client.call(3)
             self.assertEqual(raised.exception.code, 41)
+            self.assertIn("unknown remote backend error", str(raised.exception))
+            self.assertIn("status 1, error code 41", str(raised.exception))
         finally:
             await client.close()
 

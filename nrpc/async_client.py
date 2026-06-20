@@ -16,12 +16,16 @@ from .client import (
 )
 
 if TYPE_CHECKING:
+    from .async_nidaqmx_backend import AsyncNidaqmxTask
     from .async_lcard_backend import AsyncLCardBackend
     from .async_serial_backend import (
         AsyncSerialBackend,
     )
     from .async_tcp_backend import AsyncTcpBackend
     from .lcard_backend import LCardBoardType
+    from .nidaqmx_backend import (
+        NidaqmxCjcSource, NidaqmxTerminalConfig, NidaqmxThermocoupleType,
+    )
     from .serial_backend import SerialFlowControl, SerialParity
 
 
@@ -155,6 +159,64 @@ class AsyncNrpcClient:
 
         return await AsyncLCardBackend.open(
             self, board, slot, bios=bios, timeout=timeout
+        )
+
+    async def create_nidaqmx_ai_voltage(
+        self, physical_channel: str, minimum: float = -10.0,
+        maximum: float = 10.0, *,
+        terminal: "NidaqmxTerminalConfig | None" = None,
+        timeout: int = 5000,
+    ) -> "AsyncNidaqmxTask":
+        from .async_nidaqmx_backend import AsyncNidaqmxTask
+        from .nidaqmx_backend import NidaqmxTerminalConfig
+        return await AsyncNidaqmxTask.create_ai_voltage(
+            self, physical_channel, minimum, maximum,
+            terminal=NidaqmxTerminalConfig.DEFAULT if terminal is None else terminal,
+            timeout=timeout,
+        )
+
+    async def create_nidaqmx_ai_thermocouple(
+        self, physical_channel: str, minimum: float, maximum: float,
+        thermocouple_type: "NidaqmxThermocoupleType", *,
+        cjc_source: "NidaqmxCjcSource | None" = None,
+        cjc_value: float = 25.0, cjc_channel: str = "",
+        timeout: int = 5000,
+    ) -> "AsyncNidaqmxTask":
+        from .async_nidaqmx_backend import AsyncNidaqmxTask
+        from .nidaqmx_backend import NidaqmxCjcSource
+        return await AsyncNidaqmxTask.create_ai_thermocouple(
+            self, physical_channel, minimum, maximum, thermocouple_type,
+            cjc_source=NidaqmxCjcSource.BUILT_IN if cjc_source is None else cjc_source,
+            cjc_value=cjc_value, cjc_channel=cjc_channel, timeout=timeout,
+        )
+
+    async def create_nidaqmx_ao_voltage(
+        self, physical_channel: str, minimum: float = -10.0,
+        maximum: float = 10.0, *, timeout: int = 5000,
+    ) -> "AsyncNidaqmxTask":
+        from .async_nidaqmx_backend import AsyncNidaqmxTask
+        return await AsyncNidaqmxTask.create_ao_voltage(
+            self, physical_channel, minimum, maximum, timeout=timeout
+        )
+
+    async def create_nidaqmx_digital_input(
+        self, lines: str, *, one_channel_for_all_lines: bool = True,
+        timeout: int = 5000,
+    ) -> "AsyncNidaqmxTask":
+        from .async_nidaqmx_backend import AsyncNidaqmxTask
+        return await AsyncNidaqmxTask.create_digital_input(
+            self, lines, one_channel_for_all_lines=one_channel_for_all_lines,
+            timeout=timeout,
+        )
+
+    async def create_nidaqmx_digital_output(
+        self, lines: str, *, one_channel_for_all_lines: bool = True,
+        timeout: int = 5000,
+    ) -> "AsyncNidaqmxTask":
+        from .async_nidaqmx_backend import AsyncNidaqmxTask
+        return await AsyncNidaqmxTask.create_digital_output(
+            self, lines, one_channel_for_all_lines=one_channel_for_all_lines,
+            timeout=timeout,
         )
 
     async def open_serial_backend(

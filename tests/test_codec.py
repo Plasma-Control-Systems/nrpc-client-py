@@ -5,12 +5,37 @@ from nrpc.client import (
     DataType,
     NrpcClient,
     ProtocolError,
+    RemoteError,
     TypedValue,
     _encode_request,
 )
 
 
 class CodecTests(unittest.TestCase):
+    def test_remote_error_includes_readable_details(self):
+        error = RemoteError(5003, 64)
+
+        self.assertEqual(error.code, 5003)
+        self.assertEqual(error.function_index, 64)
+        self.assertEqual(error.status, 1)
+        self.assertEqual(error.description, "NI-DAQmx task creation failed")
+        self.assertIn("create NI-DAQmx analog voltage input task", str(error))
+        self.assertIn("status 1, error code 5003", str(error))
+
+    def test_unknown_remote_error_has_readable_fallback(self):
+        error = RemoteError(9999, 250)
+
+        self.assertIn("unregistered nRPC function", str(error))
+        self.assertIn("unknown remote backend error", str(error))
+
+    def test_builtin_server_error_includes_server_defined_meaning(self):
+        error = RemoteError(3, 1)
+
+        self.assertEqual(error.function_name, "sleep")
+        self.assertEqual(
+            error.description, "sleep expects one uint32 duration"
+        )
+
     def test_request_uses_network_byte_order(self):
         packet = _encode_request(
             7, [TypedValue(DataType.UINT32, 0x11223344), "ok"], 0x01020304
