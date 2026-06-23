@@ -24,6 +24,26 @@ loop:
 python examples/async_rpc.py --port 9000
 ```
 
+## TLS RPC
+
+Start a TLS-only server with its certificate and private key:
+
+```sh
+../nrpc-server/build/nrpc_server 9000 \
+  --tls-cert server.crt \
+  --tls-key server.key
+```
+
+Then call the echo backend using the certificate as the trust anchor. Specify
+the name in the certificate when connecting through a different host or IP:
+
+```sh
+python examples/tls_rpc.py \
+  --port 9000 \
+  --ca-cert server.crt \
+  --server-hostname nrpc.example.com
+```
+
 ## TCP and SCPI
 
 Routes `*IDN?` through the server-side TCP backend to a SCPI device:

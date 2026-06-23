@@ -1,0 +1,76 @@
+import ssl
+import unittest
+from unittest.mock import AsyncMock, Mock, patch
+
+from nrpc import AsyncNrpcClient, NrpcClient
+
+
+class TlsClientTests(unittest.TestCase):
+    @patch("nrpc.client.socket.create_connection")
+    def test_sync_client_wraps_connection_with_tls(self, create_connection):
+        connection = Mock()
+        tls_socket = Mock()
+        context = Mock(spec=ssl.SSLContext)
+        create_connection.return_value = connection
+        context.wrap_socket.return_value = tls_socket
+
+        client = NrpcClient(
+            "127.0.0.1",
+            9000,
+            ssl_context=context,
+            server_hostname="nrpc.example.com",
+        )
+
+        context.wrap_socket.assert_called_once_with(
+            connection, server_hostname="nrpc.example.com"
+        )
+        tls_socket.settimeout.assert_called_once_with(None)
+        client.close()
+
+    @patch("nrpc.client.socket.create_connection")
+    def test_sync_client_closes_socket_when_tls_handshake_fails(
+        self, create_connection
+    ):
+        connection = Mock()
+        context = Mock(spec=ssl.SSLContext)
+        create_connection.return_value = connection
+        context.wrap_socket.side_effect = ssl.SSLError("handshake failed")
+
+        with self.assertRaises(ssl.SSLError):
+            NrpcClient("localhost", 9000, ssl_context=context)
+
+        connection.close.assert_called_once_with()
+
+    def test_server_hostname_requires_tls(self):
+        with self.assertRaises(ValueError):
+            NrpcClient("localhost", 9000, server_hostname="localhost")
+        with self.assertRaises(ValueError):
+            AsyncNrpcClient("localhost", 9000, server_hostname="localhost")
+
+
+class AsyncTlsClientTests(unittest.IsolatedAsyncioTestCase):
+    @patch("nrpc.async_client.asyncio.open_connection", new_callable=AsyncMock)
+    async def test_async_client_passes_tls_to_asyncio(self, open_connection):
+        reader = Mock()
+        writer = Mock()
+        context = ssl.create_default_context()
+        open_connection.return_value = (reader, writer)
+        client = AsyncNrpcClient(
+            "127.0.0.1",
+            9000,
+            ssl_context=context,
+            server_hostname="nrpc.example.com",
+        )
+
+        await client._ensure_connected()
+
+        open_connection.assert_awaited_once_with(
+            "127.0.0.1",
+            9000,
+            ssl=context,
+            server_hostname="nrpc.example.com",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

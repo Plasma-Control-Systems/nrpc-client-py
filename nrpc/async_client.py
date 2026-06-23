@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 import struct
 from typing import TYPE_CHECKING, Any, Iterable
 
@@ -44,11 +45,17 @@ class AsyncNrpcClient:
         *,
         connect_timeout: float | None = 10.0,
         max_payload_size: int = DEFAULT_MAX_PAYLOAD,
+        ssl_context: ssl.SSLContext | None = None,
+        server_hostname: str | None = None,
     ):
+        if ssl_context is None and server_hostname is not None:
+            raise ValueError("server_hostname requires ssl_context")
         self._host = host
         self._port = port
         self._connect_timeout = connect_timeout
         self._max_payload_size = max_payload_size
+        self._ssl_context = ssl_context
+        self._server_hostname = server_hostname
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
@@ -61,6 +68,8 @@ class AsyncNrpcClient:
         *,
         connect_timeout: float | None = 10.0,
         max_payload_size: int = DEFAULT_MAX_PAYLOAD,
+        ssl_context: ssl.SSLContext | None = None,
+        server_hostname: str | None = None,
     ) -> AsyncNrpcClient:
         """Create and connect an asynchronous nRPC client."""
 
@@ -69,6 +78,8 @@ class AsyncNrpcClient:
             port,
             connect_timeout=connect_timeout,
             max_payload_size=max_payload_size,
+            ssl_context=ssl_context,
+            server_hostname=server_hostname,
         )
         await client._ensure_connected()
         return client
@@ -253,7 +264,17 @@ class AsyncNrpcClient:
     async def _ensure_connected(self) -> None:
         if self._writer is not None:
             return
-        operation = asyncio.open_connection(self._host, self._port)
+        operation = asyncio.open_connection(
+            self._host,
+            self._port,
+            ssl=self._ssl_context,
+            server_hostname=(
+                self._host
+                if self._ssl_context is not None
+                and self._server_hostname is None
+                else self._server_hostname
+            ),
+        )
         if self._connect_timeout is None:
             reader, writer = await operation
         else:

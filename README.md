@@ -75,6 +75,30 @@ asyncio.run(main())
 For explicit lifecycle management, use
 `client = await AsyncNrpcClient.connect(...)` and `await client.close()`.
 
+## TLS
+
+Pass an `ssl.SSLContext` to encrypt the connection and verify the server
+certificate. The same options are supported by `AsyncNrpcClient` and its
+`connect` factory:
+
+```python
+import ssl
+
+from nrpc import NrpcClient
+
+tls = ssl.create_default_context(cafile="server.crt")
+with NrpcClient(
+    "127.0.0.1",
+    9000,
+    ssl_context=tls,
+    server_hostname="nrpc.example.com",
+) as client:
+    print(client.call(0, ["hello over TLS"]))
+```
+
+`server_hostname` defaults to the connection host. Supplying it separately is
+useful when connecting by IP address to a certificate issued for a DNS name.
+
 ## TCP Backend
 
 `TcpBackend` controls a server-side operating-system TCP socket. It is

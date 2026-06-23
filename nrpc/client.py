@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import ssl
 import struct
 import threading
 from dataclasses import dataclass
@@ -315,6 +316,8 @@ class NrpcClient:
         *,
         connect_timeout: float | None = 10.0,
         max_payload_size: int = DEFAULT_MAX_PAYLOAD,
+        ssl_context: ssl.SSLContext | None = None,
+        server_hostname: str | None = None,
     ):
         """Connect to an nRPC server.
 
@@ -323,8 +326,25 @@ class NrpcClient:
             port: Server TCP port.
             connect_timeout: Socket connection timeout in seconds.
             max_payload_size: Largest accepted response payload.
+            ssl_context: TLS context. When provided, connect using TLS.
+            server_hostname: Hostname used for TLS certificate verification and
+                SNI. Defaults to ``host``.
         """
-        self._socket = socket.create_connection((host, port), connect_timeout)
+        if ssl_context is None and server_hostname is not None:
+            raise ValueError("server_hostname requires ssl_context")
+        connection = socket.create_connection((host, port), connect_timeout)
+        if ssl_context is not None:
+            try:
+                connection = ssl_context.wrap_socket(
+                    connection,
+                    server_hostname=(
+                        host if server_hostname is None else server_hostname
+                    ),
+                )
+            except BaseException:
+                connection.close()
+                raise
+        self._socket = connection
         self._socket.settimeout(None)
         self._max_payload_size = max_payload_size
         self._lock = threading.Lock()
