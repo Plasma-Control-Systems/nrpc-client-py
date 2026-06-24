@@ -158,7 +158,7 @@ async `write`, `read`, `read_until`, and `close` methods.
 
 On a Windows server built with the LCard lcomp/wlcomp backend,
 `LCardBackend` opens a board by slot and provides the wrapper's common
-asynchronous ADC, TTL, and DAC operations:
+ADC stream sampling and asynchronous DAC output operations:
 
 ```python
 from nrpc import E140Backend, LCardAdcInputMode, LCardBoardType, NrpcClient
@@ -167,23 +167,30 @@ with NrpcClient("127.0.0.1", 9000) as client:
     with client.open_lcard_backend(LCardBoardType.E140, slot=0) as device:
         assert isinstance(device, E140Backend)
         info = device.slot_info()
-        sample = device.adc_sample(
-            0, input_mode=LCardAdcInputMode.SINGLE_ENDED
+        volts = device.adc_voltage(
+            0,
+            input_mode=LCardAdcInputMode.SINGLE_ENDED,
+            input_range=2.5,
         )
-        device.write_ttl(0xA525)
-        print(info, sample)
+        device.write_dac(0, 123)
+        print(info, volts)
 ```
 
 The requested board type is checked against the physical slot. The returned
 proxy is device-specific: `L780Backend`, `L791Backend`, `E440Backend`,
 `E140Backend`, `E154Backend`, `E2010Backend`, or `E310Backend`. Their helper
-sets reflect the vendor implementations; for example, E2010 has no
-asynchronous ADC sample helper, E310 reads four configured ADC channels, and
+sets reflect the server's supported pipeline; for example, E2010 uses stream
+ADC sampling with an ADC input mask, E310 exposes slot/open/close only, and
 L791 writes DAC values as a channel pair. The asynchronous client returns the
 matching `Async...Backend` class with awaited helpers.
 For E140 and E440 ADC reads, `input_mode` accepts
 `LCardAdcInputMode.DIFFERENTIAL`, `SINGLE_ENDED`, or `ZERO`; the client encodes
 these as the same channel bits used by LCard's stream API.
+`adc_sample()` returns raw ADC counts. `adc_voltage()` converts counts to volts
+client-side using the board resolution and the selected `input_range`; when
+`input_range` is omitted, the board's default range is used. E2010/E2010B infer
+the input range from the ADC input mask unless an explicit `input_range` is
+provided.
 
 When the server opens a board without an explicit BIOS path, it searches the
 default LCard BIOS directory and loads the matching file automatically when one

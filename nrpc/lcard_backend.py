@@ -71,20 +71,19 @@ def _positive_float(value: float, name: str) -> float:
 
 
 def _signed_adc_voltage(code: int, input_range: float) -> float:
-    input_range = _positive_float(input_range, "input_range")
-    raw = code & 0xFFFF
-    if raw >= 0x8000:
-        raw -= 0x10000
-    return raw * input_range / 0x8000
+    return _scaled_signed_adc_voltage(code, input_range, 16, 0x8000)
 
 
-def _unsigned_adc_voltage(
-    code: int, input_range: float, resolution: int
+def _scaled_signed_adc_voltage(
+    code: int, input_range: float, bits: int, divisor: float
 ) -> float:
     input_range = _positive_float(input_range, "input_range")
-    if resolution <= 1:
-        raise ValueError("resolution must be greater than 1")
-    return (code & 0xFFFFFFFF) * input_range / (resolution - 1)
+    mask = (1 << bits) - 1
+    sign = 1 << (bits - 1)
+    raw = code & mask
+    if raw >= sign:
+        raw -= 1 << bits
+    return raw * input_range / divisor
 
 
 def _uint32_values(values: Iterable[int], name: str) -> list[int]:
@@ -240,55 +239,79 @@ class LCardBackend:
             raise RuntimeError("LCard backend is closed")
 
 
-class _TtlBackend(LCardBackend):
-    def configure_ttl(self, mode: int, *, timeout: int = 0) -> None:
-        self._io_async(
-            LCardAsyncOperation.TTL_CONFIG,
-            mode=_uint32(mode, "mode"),
-            timeout=timeout,
-        )
-
-    def read_ttl(self, *, timeout: int = 0) -> int:
-        result = self._io_async(
-            LCardAsyncOperation.TTL_INPUT,
-            channel_count=1,
-            timeout=timeout,
-        )
-        return result.data[0]
-
-    def write_ttl(self, value: int, *, timeout: int = 0) -> None:
-        self._io_async(
-            LCardAsyncOperation.TTL_OUTPUT,
-            channel_count=1,
-            data=[_uint32(value, "value")],
-            timeout=timeout,
-        )
-
-
-class _SingleAdcBackend(_TtlBackend):
+class _SingleAdcBackend(LCardBackend):
     ADC_INPUT_MODES = (LCardAdcInputMode.DIFFERENTIAL,)
+    ADC_INPUT_MODE_LIMITS: dict[LCardAdcInputMode, int] | None = None
+    ADC_INPUT_RANGES = (10.0,)
+    ADC_RANGE_SHIFT = 6
+    ADC_RESOLUTION_BITS = 16
+    ADC_VOLTAGE_DIVISOR = 0x8000
 
     def _adc_channel_spec(
-        self, channel: int, input_mode: LCardAdcInputMode
+        self,
+        channel: int,
+        input_mode: LCardAdcInputMode,
+        input_range: float | None = None,
     ) -> int:
         input_mode = LCardAdcInputMode(input_mode)
         if input_mode not in self.ADC_INPUT_MODES:
             raise ValueError(
                 f"{self.board.name} does not support {input_mode.name.lower()} ADC input"
             )
-        return _uint32(channel, "channel") | input_mode.value
+        if self.ADC_INPUT_MODE_LIMITS is not None:
+            maximum = self.ADC_INPUT_MODE_LIMITS[input_mode]
+            if not 0 <= channel <= maximum:
+                raise ValueError(
+                    f"{self.board.name} {input_mode.name.lower()} ADC channel "
+                    f"must be between 0 and {maximum}"
+                )
+        return (
+            _uint32(channel, "channel")
+            | input_mode.value
+            | self._adc_range_bits(input_range)
+        )
+
+    def _adc_range_bits(self, input_range: float | None) -> int:
+        if input_range is None:
+            return 0
+        input_range = _positive_float(input_range, "input_range")
+        try:
+            index = self.ADC_INPUT_RANGES.index(input_range)
+        except ValueError as exc:
+            allowed = ", ".join(str(value) for value in self.ADC_INPUT_RANGES)
+            raise ValueError(
+                f"{self.board.name} input_range must be one of: {allowed}"
+            ) from exc
+        return index << self.ADC_RANGE_SHIFT
+
+    def _adc_input_range(self, input_range: float | None) -> float:
+        if input_range is None:
+            return self.ADC_INPUT_RANGES[0]
+        self._adc_range_bits(input_range)
+        return input_range
+
+    def _adc_mode(
+        self, channel: int, input_mode: LCardAdcInputMode
+    ) -> int:
+        _ = channel, input_mode
+        return 0
 
     def adc_sample(
         self,
         channel: int,
         *,
         input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
+        input_range: float | None = None,
+        rate: float = 0.0,
         timeout: int = 0,
     ) -> int:
+        channel_spec = self._adc_channel_spec(channel, input_mode, input_range)
         result = self._io_async(
             LCardAsyncOperation.ADC_INPUT,
             channel_count=1,
-            channels=[self._adc_channel_spec(channel, input_mode)],
+            channels=[channel_spec],
+            rate=rate,
+            mode=self._adc_mode(channel_spec, input_mode),
             timeout=timeout,
         )
         return result.data[0]
@@ -298,14 +321,21 @@ class _SingleAdcBackend(_TtlBackend):
         channel: int,
         *,
         input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
-        input_range: float = 10.0,
+        input_range: float | None = None,
+        rate: float = 0.0,
         timeout: int = 0,
     ) -> float:
-        return _signed_adc_voltage(
+        return _scaled_signed_adc_voltage(
             self.adc_sample(
-                channel, input_mode=input_mode, timeout=timeout
+                channel,
+                input_mode=input_mode,
+                input_range=input_range,
+                rate=rate,
+                timeout=timeout,
             ),
-            input_range,
+            self._adc_input_range(input_range),
+            self.ADC_RESOLUTION_BITS,
+            self.ADC_VOLTAGE_DIVISOR,
         )
 
 
@@ -338,14 +368,12 @@ class L780Backend(_SingleDacBackend, _SingleAdcBackend):
         LCardBoardType.PCI_C,
     )
 
-    def configure_ttl(self, mode: int, *, timeout: int = 0) -> None:
-        if self.board != LCardBoardType.PCI_C:
-            raise RuntimeError("TTL configuration is supported only by PCI_C")
-        super().configure_ttl(mode, timeout=timeout)
-
 
 class L791Backend(_SingleAdcBackend):
     BOARD_TYPES = (LCardBoardType.L791,)
+    ADC_INPUT_RANGES = (10.0, 5.0, 2.5, 1.25, 0.625, 0.312, 0.156, 0.078)
+    ADC_RESOLUTION_BITS = 14
+    ADC_VOLTAGE_DIVISOR = 8192.0
 
     def write_dac_pair(
         self,
@@ -378,6 +406,14 @@ class E440Backend(_SingleDacBackend, _SingleAdcBackend):
         LCardAdcInputMode.ZERO,
         LCardAdcInputMode.SINGLE_ENDED,
     )
+    ADC_INPUT_MODE_LIMITS = {
+        LCardAdcInputMode.DIFFERENTIAL: 15,
+        LCardAdcInputMode.ZERO: 15,
+        LCardAdcInputMode.SINGLE_ENDED: 15,
+    }
+    ADC_INPUT_RANGES = (10.0, 2.5, 0.625, 0.15625)
+    ADC_RESOLUTION_BITS = 14
+    ADC_VOLTAGE_DIVISOR = 8000.0
 
 
 class E140Backend(_SingleDacBackend, _SingleAdcBackend):
@@ -387,6 +423,14 @@ class E140Backend(_SingleDacBackend, _SingleAdcBackend):
         LCardAdcInputMode.ZERO,
         LCardAdcInputMode.SINGLE_ENDED,
     )
+    ADC_INPUT_MODE_LIMITS = {
+        LCardAdcInputMode.DIFFERENTIAL: 15,
+        LCardAdcInputMode.ZERO: 31,
+        LCardAdcInputMode.SINGLE_ENDED: 31,
+    }
+    ADC_INPUT_RANGES = (10.0, 2.5, 0.625, 0.15625)
+    ADC_RESOLUTION_BITS = 14
+    ADC_VOLTAGE_DIVISOR = 8000.0
 
     def write_dac_pair(
         self, value_a: int, value_b: int, *, timeout: int = 0
@@ -405,6 +449,9 @@ class E140Backend(_SingleDacBackend, _SingleAdcBackend):
 
 class E154Backend(_SingleAdcBackend):
     BOARD_TYPES = (LCardBoardType.E154,)
+    ADC_INPUT_RANGES = (5.0, 1.6, 0.5, 0.16)
+    ADC_RESOLUTION_BITS = 12
+    ADC_VOLTAGE_DIVISOR = 2000.0
 
     def write_dac(self, value: int, *, timeout: int = 0) -> None:
         if not 0 <= value <= 0xFF:
@@ -417,66 +464,141 @@ class E154Backend(_SingleAdcBackend):
         )
 
 
-class E2010Backend(_SingleDacBackend, _TtlBackend):
+class _E2010AdcBackend(_SingleAdcBackend):
+    ADC_INPUT_MASK_SIGNAL_0_3V = 0x0400
+    ADC_INPUT_MASK_SIGNAL_1_3V = 0x0200
+    ADC_INPUT_MASK_SIGNAL_2_3V = 0x1000
+    ADC_INPUT_MASK_SIGNAL_3_3V = 0x0800
+    _ADC_SIGNAL_BITS = (
+        ADC_INPUT_MASK_SIGNAL_0_3V,
+        ADC_INPUT_MASK_SIGNAL_1_3V,
+        ADC_INPUT_MASK_SIGNAL_2_3V,
+        ADC_INPUT_MASK_SIGNAL_3_3V,
+    )
+    _ADC_RANGE_BITS = (
+        (0x0008, 0x0010),
+        (0x0002, 0x0004),
+        (0x8000, 0x0100),
+        (0x2000, 0x4000),
+    )
+    _ADC_RANGE_VALUES = (3.0, 1.0, 0.3)
+    _ADC_KNOWN_MASK = (
+        ADC_INPUT_MASK_SIGNAL_0_3V
+        | ADC_INPUT_MASK_SIGNAL_1_3V
+        | ADC_INPUT_MASK_SIGNAL_2_3V
+        | ADC_INPUT_MASK_SIGNAL_3_3V
+        | 0x0008
+        | 0x0010
+        | 0x0002
+        | 0x0004
+        | 0x8000
+        | 0x0100
+        | 0x2000
+        | 0x4000
+    )
+
+    def _adc_channel_spec(
+        self, channel: int, input_mode: LCardAdcInputMode
+    ) -> int:
+        if input_mode != LCardAdcInputMode.DIFFERENTIAL:
+            raise ValueError("E2010 ADC input mode is configured by adc_input_mask")
+        if not 0 <= channel <= 3:
+            raise ValueError("channel must be between 0 and 3")
+        return channel
+
+    def _adc_mode(
+        self, channel: int, input_mode: LCardAdcInputMode
+    ) -> int:
+        _ = channel, input_mode
+        return self._ADC_SIGNAL_BITS[channel]
+
+    @classmethod
+    def _adc_input_range_from_mask(cls, channel: int, adc_input_mask: int) -> float:
+        one_volt_bit, point_three_volt_bit = cls._ADC_RANGE_BITS[channel]
+        if adc_input_mask & point_three_volt_bit:
+            return cls._ADC_RANGE_VALUES[2]
+        if adc_input_mask & one_volt_bit:
+            return cls._ADC_RANGE_VALUES[1]
+        return cls._ADC_RANGE_VALUES[0]
+
+    @classmethod
+    def _validate_adc_input_mask(cls, channel: int, adc_input_mask: int) -> int:
+        adc_input_mask = _uint32(adc_input_mask, "adc_input_mask")
+        if adc_input_mask & ~cls._ADC_KNOWN_MASK:
+            raise ValueError("adc_input_mask contains unsupported E2010 bits")
+        if (adc_input_mask & cls._ADC_SIGNAL_BITS[channel]) == 0:
+            raise ValueError(
+                "adc_input_mask must enable the selected E2010 ADC channel"
+            )
+        for index, range_bits in enumerate(cls._ADC_RANGE_BITS):
+            if sum(1 for bit in range_bits if adc_input_mask & bit) > 1:
+                raise ValueError(
+                    f"adc_input_mask selects more than one range for channel {index}"
+                )
+        return adc_input_mask
+
+    def adc_sample(
+        self,
+        channel: int,
+        *,
+        input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
+        adc_input_mask: int | None = None,
+        rate: float = 0.0,
+        timeout: int = 0,
+    ) -> int:
+        channel_spec = self._adc_channel_spec(channel, input_mode)
+        if adc_input_mask is None:
+            adc_input_mask = self._adc_mode(channel_spec, input_mode)
+        result = self._io_async(
+            LCardAsyncOperation.ADC_INPUT,
+            channel_count=1,
+            channels=[channel_spec],
+            rate=rate,
+            mode=self._validate_adc_input_mask(channel_spec, adc_input_mask),
+            timeout=timeout,
+        )
+        return result.data[0]
+
+    def adc_voltage(
+        self,
+        channel: int,
+        *,
+        input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
+        adc_input_mask: int | None = None,
+        input_range: float | None = None,
+        rate: float = 0.0,
+        timeout: int = 0,
+    ) -> float:
+        channel_spec = self._adc_channel_spec(channel, input_mode)
+        if adc_input_mask is None:
+            adc_input_mask = self._adc_mode(channel_spec, input_mode)
+        adc_input_mask = self._validate_adc_input_mask(
+            channel_spec, adc_input_mask
+        )
+        if input_range is None:
+            input_range = self._adc_input_range_from_mask(
+                channel_spec, adc_input_mask
+            )
+        return _scaled_signed_adc_voltage(
+            self.adc_sample(
+                channel,
+                input_mode=input_mode,
+                adc_input_mask=adc_input_mask,
+                rate=rate,
+                timeout=timeout,
+            ),
+            input_range,
+            14,
+            8000.0,
+        )
+
+
+class E2010Backend(_SingleDacBackend, _E2010AdcBackend):
     BOARD_TYPES = (LCardBoardType.E2010, LCardBoardType.E2010B)
 
 
-class E310Backend(_TtlBackend):
+class E310Backend(LCardBackend):
     BOARD_TYPES = (LCardBoardType.E310,)
-    ADC_INPUT_RANGE = 3.3
-    ADC_RESOLUTION = 4096
-
-    def configure_adc(
-        self, channel_mask: int, *, external_start: bool = False,
-        timeout: int = 0
-    ) -> None:
-        if channel_mask & ~0xF0 or channel_mask == 0:
-            raise ValueError("E310 channel_mask must select bits 0x10..0x80")
-        self._io_async(
-            LCardAsyncOperation.ADC_CONFIG,
-            channel_count=channel_mask,
-            mode=0x10000 if external_start else 0,
-            timeout=timeout,
-        )
-
-    def read_adc(self, *, timeout: int = 0) -> tuple[int, int, int, int]:
-        result = self._io_async(
-            LCardAsyncOperation.ADC_INPUT,
-            channel_count=4,
-            timeout=timeout,
-        )
-        if len(result.data) != 4:
-            raise RuntimeError("E310 ADC input did not return four channels")
-        return result.data[0], result.data[1], result.data[2], result.data[3]
-
-    def read_adc_voltage(
-        self,
-        *,
-        input_range: float = ADC_INPUT_RANGE,
-        resolution: int = ADC_RESOLUTION,
-        timeout: int = 0,
-    ) -> tuple[float, float, float, float]:
-        return tuple(
-            _unsigned_adc_voltage(code, input_range, resolution)
-            for code in self.read_adc(timeout=timeout)
-        )
-
-    def configure_ttl(
-        self,
-        line_mask: int,
-        *,
-        extended_lines: bool = False,
-        timeout: int = 0,
-    ) -> None:
-        maximum = 0x7FF if extended_lines else 0xFF
-        if not 0 <= line_mask <= maximum:
-            raise ValueError(f"E310 line_mask must be between 0 and {maximum}")
-        self._io_async(
-            LCardAsyncOperation.TTL_CONFIG,
-            channel_count=line_mask,
-            mode=1 if extended_lines else 0,
-            timeout=timeout,
-        )
 
 
 _BACKEND_TYPES: dict[LCardBoardType, type[LCardBackend]] = {}

@@ -6,7 +6,7 @@ import argparse
 from nrpc import (
     E140Backend,
     E154Backend,
-    E310Backend,
+    E2010Backend,
     E440Backend,
     L780Backend,
     L791Backend,
@@ -53,14 +53,14 @@ def main() -> None:
         help="ADC input mode for E140/E440",
     )
     parser.add_argument(
-        "--e310-external-start",
-        action="store_true",
-        help="configure E310 ADC for external start",
+        "--adc-input-range",
+        type=float,
+        help="ADC voltage range; when omitted the client uses the board default",
     )
     parser.add_argument(
-        "--ttl-output",
+        "--e2010-adc-input-mask",
         type=integer,
-        help="optional TTL value to write, for example 0xA525",
+        help="optional E20-10 ADC input mask; defaults to signal input on the selected channel",
     )
     parser.add_argument(
         "--dac-output",
@@ -84,31 +84,29 @@ def main() -> None:
                 f"dsp_type={info.dsp_type} irq={info.irq}"
             )
 
-            if isinstance(
-                device,
-                (L780Backend, L791Backend, E440Backend, E140Backend, E154Backend),
+            if isinstance(device, E2010Backend):
+                sample_kwargs = {}
+                if arguments.e2010_adc_input_mask is not None:
+                    sample_kwargs["adc_input_mask"] = arguments.e2010_adc_input_mask
+                sample = device.adc_voltage(
+                    arguments.adc_channel,
+                    input_range=arguments.adc_input_range,
+                    timeout=arguments.timeout,
+                    **sample_kwargs,
+                )
+                print(f"adc[{arguments.adc_channel}]={sample:g} V")
+            elif isinstance(
+                device, (L780Backend, L791Backend, E440Backend, E140Backend, E154Backend)
             ):
-                sample = device.adc_sample(
+                sample = device.adc_voltage(
                     arguments.adc_channel,
                     input_mode=ADC_INPUT_MODES[arguments.adc_input_mode],
+                    input_range=arguments.adc_input_range,
                     timeout=arguments.timeout,
                 )
-                print(f"adc[{arguments.adc_channel}]={sample}")
-            elif isinstance(device, E310Backend):
-                device.configure_adc(
-                    0xF0,
-                    external_start=arguments.e310_external_start,
-                    timeout=arguments.timeout,
-                )
-                print(f"adc={device.read_adc(timeout=arguments.timeout)}")
+                print(f"adc[{arguments.adc_channel}]={sample:g} V")
             else:
-                print("asynchronous ADC sampling is not supported")
-
-            if arguments.ttl_output is not None:
-                device.write_ttl(
-                    arguments.ttl_output, timeout=arguments.timeout
-                )
-                print(f"ttl_output=0x{arguments.ttl_output:x}")
+                print("ADC stream sampling is not supported")
 
             if arguments.dac_output is not None:
                 if isinstance(

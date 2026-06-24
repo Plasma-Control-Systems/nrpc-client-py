@@ -1,6 +1,7 @@
 import unittest
 
 from nrpc import (
+    AsyncE2010Backend,
     AsyncLCardBackend,
     AsyncSerialBackend,
     AsyncTcpBackend,
@@ -30,6 +31,7 @@ class FakeAsyncClient:
     def __init__(self):
         self.calls = []
         self.reads = [b"12.", b"500\nextra\n"]
+        self.io_data = None
 
     async def call(self, function, args=(), timeout=0):
         self.calls.append((function, list(args), timeout))
@@ -43,6 +45,8 @@ class FakeAsyncClient:
             return []
         if function == LCARD_IO_ASYNC:
             count = args[4].value
+            if self.io_data is not None:
+                return [1000.0, self.io_data[:count]]
             return [1000.0, list(range(42, 42 + count))]
         if function == LCARD_CLOSE:
             return []
@@ -101,8 +105,7 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
             client, LCardBoardType.E310, 3, timeout=100
         ) as backend:
             self.assertIsInstance(backend, AsyncE310Backend)
-            await backend.configure_adc(0x30)
-            self.assertEqual(await backend.read_adc(), (42, 43, 44, 45))
+            self.assertFalse(hasattr(backend, "read_adc"))
 
         self.assertEqual(
             client.calls[0][1][0], TypedValue(DataType.UINT32, 3)
@@ -114,15 +117,54 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.calls[0][1][2], "")
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
 
+    async def test_lcard_e2010_adc_stream_helper(self):
+        client = FakeAsyncClient()
+        backend = await AsyncLCardBackend.open(client, LCardBoardType.E2010)
+
+        self.assertIsInstance(backend, AsyncE2010Backend)
+        self.assertEqual(await backend.adc_sample(0), 42)
+        self.assertEqual(client.calls[1][1][3], TypedValue(DataType.UINT32, 0x0400))
+        self.assertEqual(await backend.adc_sample(3), 42)
+        self.assertEqual(client.calls[2][1][3], TypedValue(DataType.UINT32, 0x0800))
+        with self.assertRaises(ValueError):
+            await backend.adc_sample(3, adc_input_mask=0x0400)
+        client.io_data = [4000]
+        self.assertAlmostEqual(
+            await backend.adc_voltage(1, adc_input_mask=0x0202),
+            0.5,
+        )
+
     async def test_lcard_adc_input_mode_is_encoded_in_channel(self):
         client = FakeAsyncClient()
         backend = await AsyncLCardBackend.open(client, LCardBoardType.E140)
 
         await backend.adc_sample(
-            2, input_mode=LCardAdcInputMode.SINGLE_ENDED
+            2, input_mode=LCardAdcInputMode.SINGLE_ENDED, rate=1000.0
         )
 
         self.assertEqual(
+            client.calls[1][1][2],
+            TypedValue(DataType.FLOAT64, 1000.0),
+        )
+        self.assertEqual(
             client.calls[1][1][5],
             TypedValue(DataType.UINT32, [2 | LCardAdcInputMode.SINGLE_ENDED]),
+        )
+        with self.assertRaises(ValueError):
+            await backend.adc_sample(16, input_mode=LCardAdcInputMode.DIFFERENTIAL)
+        client.io_data = [4000]
+        self.assertAlmostEqual(
+            await backend.adc_voltage(
+                2,
+                input_mode=LCardAdcInputMode.SINGLE_ENDED,
+                input_range=2.5,
+            ),
+            1.25,
+        )
+        self.assertEqual(
+            client.calls[-1][1][5],
+            TypedValue(
+                DataType.UINT32,
+                [2 | LCardAdcInputMode.SINGLE_ENDED | 64],
+            ),
         )
