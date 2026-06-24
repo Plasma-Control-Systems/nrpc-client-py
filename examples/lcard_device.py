@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument(
         "--bios",
         default="",
-        help="optional BIOS or PLD path passed to the LCard driver",
+        help="override the server's automatic BIOS or PLD lookup",
     )
     parser.add_argument("--adc-channel", type=integer, default=0)
     parser.add_argument("--adc-mode", type=integer, default=0)

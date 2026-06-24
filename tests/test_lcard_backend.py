@@ -45,7 +45,7 @@ class LCardBackendTests(unittest.TestCase):
     def test_e140_helpers_and_board_identity(self):
         client = FakeClient()
         with LCardBackend.open(
-            client, LCardBoardType.E140, 2, bios="e140", timeout=100
+            client, LCardBoardType.E140, 2, timeout=100
         ) as backend:
             self.assertIsInstance(backend, E140Backend)
             self.assertEqual(
@@ -63,7 +63,14 @@ class LCardBackendTests(unittest.TestCase):
             open_args[1],
             TypedValue(DataType.UINT32, LCardBoardType.E140.value),
         )
+        self.assertEqual(open_args[2], "")
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
+
+    def test_explicit_bios_path_overrides_server_auto_load(self):
+        client = FakeClient()
+        LCardBackend.open(client, LCardBoardType.E140, bios="e140.bio")
+
+        self.assertEqual(client.calls[0][1][2], "e140.bio")
 
     def test_device_specific_classes_expose_distinct_helpers(self):
         client = FakeClient()

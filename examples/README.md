@@ -90,8 +90,9 @@ python examples/lcard_device.py `
   --adc-channel 0
 ```
 
-Pass a BIOS or PLD path when the board requires one, and optionally exercise
-TTL or DAC output:
+The Windows server loads a matching BIOS or PLD file automatically from the
+default LCard BIOS directory when one is present. Pass `--bios` only to
+override that lookup, and optionally exercise TTL or DAC output:
 
 ```powershell
 python examples/lcard_device.py `

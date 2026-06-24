@@ -164,9 +164,7 @@ asynchronous ADC, TTL, and DAC operations:
 from nrpc import E140Backend, LCardBoardType, NrpcClient
 
 with NrpcClient("127.0.0.1", 9000) as client:
-    with client.open_lcard_backend(
-        LCardBoardType.E140, slot=0, bios="e140"
-    ) as device:
+    with client.open_lcard_backend(LCardBoardType.E140, slot=0) as device:
         assert isinstance(device, E140Backend)
         info = device.slot_info()
         sample = device.adc_sample(0)
@@ -181,6 +179,10 @@ sets reflect the vendor implementations; for example, E2010 has no
 asynchronous ADC sample helper, E310 reads four configured ADC channels, and
 L791 writes DAC values as a channel pair. The asynchronous client returns the
 matching `Async...Backend` class with awaited helpers.
+
+When the server opens a board without an explicit BIOS path, it searches the
+default LCard BIOS directory and loads the matching file automatically when one
+is present. Pass `bios=...` only to override that automatic lookup.
 
 ## NI-DAQmx Backend
 

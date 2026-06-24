@@ -42,6 +42,8 @@ class AsyncLCardBackend:
         bios: str = "",
         timeout: int = 5000,
     ) -> AsyncLCardBackend:
+        """Open a board, letting the server auto-load BIOS when ``bios`` is empty."""
+
         board = LCardBoardType(board)
         _uint32(slot, "slot")
         values = await client.call(

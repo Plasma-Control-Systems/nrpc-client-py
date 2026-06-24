@@ -164,7 +164,7 @@ class AsyncNrpcClient:
         bios: str = "",
         timeout: int = 5000,
     ) -> "AsyncLCardBackend":
-        """Open a server-side LCard device and return its async proxy."""
+        """Open an LCard device; empty ``bios`` lets the server auto-load it."""
 
         from .async_lcard_backend import AsyncLCardBackend
 

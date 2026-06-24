@@ -427,7 +427,7 @@ class NrpcClient:
         bios: str = "",
         timeout: int = 5000,
     ) -> "LCardBackend":
-        """Open a server-side LCard device and return its client proxy."""
+        """Open an LCard device; empty ``bios`` lets the server auto-load it."""
 
         from .lcard_backend import LCardBackend
 

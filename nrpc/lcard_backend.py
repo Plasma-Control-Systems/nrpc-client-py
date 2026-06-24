@@ -123,6 +123,8 @@ class LCardBackend:
         bios: str = "",
         timeout: int = 5000,
     ) -> LCardBackend:
+        """Open a board, letting the server auto-load BIOS when ``bios`` is empty."""
+
         board = LCardBoardType(board)
         _uint32(slot, "slot")
         backend_type = _BACKEND_TYPES[board]

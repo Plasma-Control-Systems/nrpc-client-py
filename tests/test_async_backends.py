@@ -97,7 +97,7 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_lcard_backend_runs_async_io_and_closes(self):
         client = FakeAsyncClient()
         async with await AsyncLCardBackend.open(
-            client, LCardBoardType.E310, 3, bios="e310", timeout=100
+            client, LCardBoardType.E310, 3, timeout=100
         ) as backend:
             self.assertIsInstance(backend, AsyncE310Backend)
             await backend.configure_adc(0x30)
@@ -110,4 +110,5 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
             client.calls[0][1][1],
             TypedValue(DataType.UINT32, LCardBoardType.E310.value),
         )
+        self.assertEqual(client.calls[0][1][2], "")
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
