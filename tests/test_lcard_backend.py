@@ -7,6 +7,7 @@ from nrpc import (
     E310Backend,
     L780Backend,
     L791Backend,
+    LCardAdcInputMode,
     LCardBackend,
     LCardBoardType,
     LCardSlotInfo,
@@ -53,6 +54,9 @@ class LCardBackendTests(unittest.TestCase):
                 LCardSlotInfo(LCardBoardType.E140, 23, 5),
             )
             self.assertEqual(backend.adc_sample(4), 101)
+            backend.adc_sample(
+                4, input_mode=LCardAdcInputMode.SINGLE_ENDED
+            )
             backend.write_dac(1, 123)
             backend.write_dac_pair(100, 200)
             backend.load_bios("updated.bio")
@@ -64,6 +68,13 @@ class LCardBackendTests(unittest.TestCase):
             TypedValue(DataType.UINT32, LCardBoardType.E140.value),
         )
         self.assertEqual(open_args[2], "")
+        default_adc_args = client.calls[2][1]
+        self.assertEqual(default_adc_args[5], TypedValue(DataType.UINT32, [4]))
+        single_ended_adc_args = client.calls[3][1]
+        self.assertEqual(
+            single_ended_adc_args[5],
+            TypedValue(DataType.UINT32, [4 | LCardAdcInputMode.SINGLE_ENDED]),
+        )
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
 
     def test_explicit_bios_path_overrides_server_auto_load(self):
@@ -92,6 +103,9 @@ class LCardBackendTests(unittest.TestCase):
         self.assertIsInstance(pci_a, L780Backend)
         with self.assertRaises(RuntimeError):
             pci_a.configure_ttl(1)
+
+        with self.assertRaises(ValueError):
+            l791.adc_sample(0, input_mode=LCardAdcInputMode.SINGLE_ENDED)
 
     def test_invalid_values_are_rejected_locally(self):
         client = FakeClient()

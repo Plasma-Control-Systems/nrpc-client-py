@@ -7,6 +7,7 @@ from .lcard_backend import (
     LCARD_CLOSE,
     LCARD_IO_ASYNC,
     LCARD_OPEN,
+    LCardAdcInputMode,
     LCardAsyncOperation,
     LCardAsyncResult,
     LCardBoardType,
@@ -148,11 +149,29 @@ class _AsyncTtlBackend(AsyncLCardBackend):
 
 
 class _AsyncSingleAdcBackend(_AsyncTtlBackend):
-    async def adc_sample(self, channel: int, *, timeout: int = 0) -> int:
+    ADC_INPUT_MODES = (LCardAdcInputMode.DIFFERENTIAL,)
+
+    def _adc_channel_spec(
+        self, channel: int, input_mode: LCardAdcInputMode
+    ) -> int:
+        input_mode = LCardAdcInputMode(input_mode)
+        if input_mode not in self.ADC_INPUT_MODES:
+            raise ValueError(
+                f"{self.board.name} does not support {input_mode.name.lower()} ADC input"
+            )
+        return _uint32(channel, "channel") | input_mode.value
+
+    async def adc_sample(
+        self,
+        channel: int,
+        *,
+        input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
+        timeout: int = 0,
+    ) -> int:
         result = await self._io_async(
             LCardAsyncOperation.ADC_INPUT,
             channel_count=1,
-            channels=[_uint32(channel, "channel")],
+            channels=[self._adc_channel_spec(channel, input_mode)],
             timeout=timeout,
         )
         return result.data[0]
@@ -161,11 +180,15 @@ class _AsyncSingleAdcBackend(_AsyncTtlBackend):
         self,
         channel: int,
         *,
+        input_mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
         input_range: float = 10.0,
         timeout: int = 0,
     ) -> float:
         return _signed_adc_voltage(
-            await self.adc_sample(channel, timeout=timeout), input_range
+            await self.adc_sample(
+                channel, input_mode=input_mode, timeout=timeout
+            ),
+            input_range,
         )
 
 
@@ -221,10 +244,20 @@ class AsyncL791Backend(_AsyncSingleAdcBackend):
 
 class AsyncE440Backend(_AsyncSingleDacBackend, _AsyncSingleAdcBackend):
     BOARD_TYPES = (LCardBoardType.E440,)
+    ADC_INPUT_MODES = (
+        LCardAdcInputMode.DIFFERENTIAL,
+        LCardAdcInputMode.ZERO,
+        LCardAdcInputMode.SINGLE_ENDED,
+    )
 
 
 class AsyncE140Backend(_AsyncSingleDacBackend, _AsyncSingleAdcBackend):
     BOARD_TYPES = (LCardBoardType.E140,)
+    ADC_INPUT_MODES = (
+        LCardAdcInputMode.DIFFERENTIAL,
+        LCardAdcInputMode.ZERO,
+        LCardAdcInputMode.SINGLE_ENDED,
+    )
 
     async def write_dac_pair(
         self, value_a: int, value_b: int, *, timeout: int = 0

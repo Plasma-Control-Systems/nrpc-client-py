@@ -87,7 +87,8 @@ python examples/lcard_device.py `
   --nrpc-port 9000 `
   --board E140 `
   --slot 0 `
-  --adc-channel 0
+  --adc-channel 0 `
+  --adc-input-mode single-ended
 ```
 
 The Windows server loads a matching BIOS or PLD file automatically from the

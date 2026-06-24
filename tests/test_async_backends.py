@@ -14,6 +14,7 @@ from nrpc.lcard_backend import (
     LCARD_CLOSE,
     LCARD_IO_ASYNC,
     LCARD_OPEN,
+    LCardAdcInputMode,
     LCardBoardType,
 )
 from nrpc.serial_backend import (
@@ -112,3 +113,16 @@ class AsyncBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(client.calls[0][1][2], "")
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
+
+    async def test_lcard_adc_input_mode_is_encoded_in_channel(self):
+        client = FakeAsyncClient()
+        backend = await AsyncLCardBackend.open(client, LCardBoardType.E140)
+
+        await backend.adc_sample(
+            2, input_mode=LCardAdcInputMode.SINGLE_ENDED
+        )
+
+        self.assertEqual(
+            client.calls[1][1][5],
+            TypedValue(DataType.UINT32, [2 | LCardAdcInputMode.SINGLE_ENDED]),
+        )

@@ -10,9 +10,17 @@ from nrpc import (
     E440Backend,
     L780Backend,
     L791Backend,
+    LCardAdcInputMode,
     LCardBoardType,
     NrpcClient,
 )
+
+
+ADC_INPUT_MODES = {
+    "differential": LCardAdcInputMode.DIFFERENTIAL,
+    "single-ended": LCardAdcInputMode.SINGLE_ENDED,
+    "zero": LCardAdcInputMode.ZERO,
+}
 
 
 def integer(value: str) -> int:
@@ -38,7 +46,17 @@ def main() -> None:
         help="override the server's automatic BIOS or PLD lookup",
     )
     parser.add_argument("--adc-channel", type=integer, default=0)
-    parser.add_argument("--adc-mode", type=integer, default=0)
+    parser.add_argument(
+        "--adc-input-mode",
+        choices=tuple(ADC_INPUT_MODES),
+        default="differential",
+        help="ADC input mode for E140/E440",
+    )
+    parser.add_argument(
+        "--e310-external-start",
+        action="store_true",
+        help="configure E310 ADC for external start",
+    )
     parser.add_argument(
         "--ttl-output",
         type=integer,
@@ -71,13 +89,15 @@ def main() -> None:
                 (L780Backend, L791Backend, E440Backend, E140Backend, E154Backend),
             ):
                 sample = device.adc_sample(
-                    arguments.adc_channel, timeout=arguments.timeout
+                    arguments.adc_channel,
+                    input_mode=ADC_INPUT_MODES[arguments.adc_input_mode],
+                    timeout=arguments.timeout,
                 )
                 print(f"adc[{arguments.adc_channel}]={sample}")
             elif isinstance(device, E310Backend):
                 device.configure_adc(
                     0xF0,
-                    external_start=bool(arguments.adc_mode),
+                    external_start=arguments.e310_external_start,
                     timeout=arguments.timeout,
                 )
                 print(f"adc={device.read_adc(timeout=arguments.timeout)}")
