@@ -11,8 +11,10 @@ from .lcard_backend import (
     LCardAsyncResult,
     LCardBoardType,
     _decode_uint32_values,
+    _signed_adc_voltage,
     _uint32,
     _uint32_values,
+    _unsigned_adc_voltage,
 )
 
 if TYPE_CHECKING:
@@ -153,6 +155,17 @@ class _AsyncSingleAdcBackend(_AsyncTtlBackend):
         )
         return result.data[0]
 
+    async def adc_voltage(
+        self,
+        channel: int,
+        *,
+        input_range: float = 10.0,
+        timeout: int = 0,
+    ) -> float:
+        return _signed_adc_voltage(
+            await self.adc_sample(channel, timeout=timeout), input_range
+        )
+
 
 class _AsyncSingleDacBackend(AsyncLCardBackend):
     async def write_dac(
@@ -245,6 +258,8 @@ class AsyncE2010Backend(_AsyncSingleDacBackend, _AsyncTtlBackend):
 
 class AsyncE310Backend(_AsyncTtlBackend):
     BOARD_TYPES = (LCardBoardType.E310,)
+    ADC_INPUT_RANGE = 3.3
+    ADC_RESOLUTION = 4096
 
     async def configure_adc(
         self, channel_mask: int, *, external_start: bool = False,
@@ -268,6 +283,18 @@ class AsyncE310Backend(_AsyncTtlBackend):
         if len(result.data) != 4:
             raise RuntimeError("E310 ADC input did not return four channels")
         return result.data[0], result.data[1], result.data[2], result.data[3]
+
+    async def read_adc_voltage(
+        self,
+        *,
+        input_range: float = ADC_INPUT_RANGE,
+        resolution: int = ADC_RESOLUTION,
+        timeout: int = 0,
+    ) -> tuple[float, float, float, float]:
+        return tuple(
+            _unsigned_adc_voltage(code, input_range, resolution)
+            for code in await self.read_adc(timeout=timeout)
+        )
 
     async def configure_ttl(
         self, line_mask: int, *, extended_lines: bool = False,

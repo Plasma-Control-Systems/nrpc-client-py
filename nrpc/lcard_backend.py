@@ -55,6 +55,30 @@ class LCardAsyncResult:
     data: list[int]
 
 
+def _positive_float(value: float, name: str) -> float:
+    value = float(value)
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _signed_adc_voltage(code: int, input_range: float) -> float:
+    input_range = _positive_float(input_range, "input_range")
+    raw = code & 0xFFFF
+    if raw >= 0x8000:
+        raw -= 0x10000
+    return raw * input_range / 0x8000
+
+
+def _unsigned_adc_voltage(
+    code: int, input_range: float, resolution: int
+) -> float:
+    input_range = _positive_float(input_range, "input_range")
+    if resolution <= 1:
+        raise ValueError("resolution must be greater than 1")
+    return (code & 0xFFFFFFFF) * input_range / (resolution - 1)
+
+
 def _uint32_values(values: Iterable[int], name: str) -> list[int]:
     result = list(values)
     if len(result) > 128:
@@ -241,6 +265,17 @@ class _SingleAdcBackend(_TtlBackend):
         )
         return result.data[0]
 
+    def adc_voltage(
+        self,
+        channel: int,
+        *,
+        input_range: float = 10.0,
+        timeout: int = 0,
+    ) -> float:
+        return _signed_adc_voltage(
+            self.adc_sample(channel, timeout=timeout), input_range
+        )
+
 
 class _SingleDacBackend(LCardBackend):
     DAC_MAX = 0xFFF
@@ -346,6 +381,8 @@ class E2010Backend(_SingleDacBackend, _TtlBackend):
 
 class E310Backend(_TtlBackend):
     BOARD_TYPES = (LCardBoardType.E310,)
+    ADC_INPUT_RANGE = 3.3
+    ADC_RESOLUTION = 4096
 
     def configure_adc(
         self, channel_mask: int, *, external_start: bool = False,
@@ -369,6 +406,18 @@ class E310Backend(_TtlBackend):
         if len(result.data) != 4:
             raise RuntimeError("E310 ADC input did not return four channels")
         return result.data[0], result.data[1], result.data[2], result.data[3]
+
+    def read_adc_voltage(
+        self,
+        *,
+        input_range: float = ADC_INPUT_RANGE,
+        resolution: int = ADC_RESOLUTION,
+        timeout: int = 0,
+    ) -> tuple[float, float, float, float]:
+        return tuple(
+            _unsigned_adc_voltage(code, input_range, resolution)
+            for code in self.read_adc(timeout=timeout)
+        )
 
     def configure_ttl(
         self,
