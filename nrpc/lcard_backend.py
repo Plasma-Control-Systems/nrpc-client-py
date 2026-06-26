@@ -14,6 +14,7 @@ LCARD_IO_ASYNC = 49
 LCARD_SLOT_INFO = 50
 LCARD_LOAD_BIOS = 51
 LCARD_CLOSE = 52
+LCARD_ADC_FRAME = 53
 
 
 class LCardBoardType(IntEnum):
@@ -61,6 +62,14 @@ class LCardSlotInfo:
 class LCardAsyncResult:
     rate: float
     data: list[int]
+
+
+@dataclass(frozen=True)
+class LCardAdcFrame:
+    rate: float
+    channel_count: int
+    samples_per_channel: int
+    data: list[float]
 
 
 def _positive_float(value: float, name: str) -> float:
@@ -218,6 +227,51 @@ class LCardBackend:
             values[0], _decode_uint32_values(values[1], "IoAsync")
         )
 
+    def _adc_frame(
+        self,
+        *,
+        channel_count: int,
+        sample_rate: float,
+        samples_per_channel: int,
+        start_channel: int,
+        end_channel: int,
+        mode: int,
+        auto_init: bool = True,
+        timeout: int = 0,
+    ) -> tuple[float, int, int, list[int]]:
+        self._ensure_open()
+        channel_count = _uint32(channel_count, "channel_count")
+        samples_per_channel = _uint32(samples_per_channel, "samples_per_channel")
+        start_channel = _uint32(start_channel, "start_channel")
+        end_channel = _uint32(end_channel, "end_channel")
+        mode = _uint32(mode, "mode")
+        sample_rate = _positive_float(sample_rate, "sample_rate")
+        values = self._client.call(
+            LCARD_ADC_FRAME,
+            [
+                TypedValue(DataType.UINT64, self._handle),
+                TypedValue(DataType.UINT32, channel_count),
+                TypedValue(DataType.FLOAT64, sample_rate),
+                TypedValue(DataType.UINT32, samples_per_channel),
+                TypedValue(DataType.UINT32, start_channel),
+                TypedValue(DataType.UINT32, end_channel),
+                TypedValue(DataType.UINT32, mode),
+                TypedValue(DataType.BOOL, bool(auto_init)),
+            ],
+            timeout=timeout,
+        )
+        if (
+            len(values) != 4
+            or not isinstance(values[0], float)
+            or not isinstance(values[1], int)
+            or not isinstance(values[2], int)
+        ):
+            raise RuntimeError("LCard ADC frame returned invalid data")
+        data = _decode_uint32_values(values[3], "ADC frame")
+        if len(data) != values[1] * values[2]:
+            raise RuntimeError("LCard ADC frame returned invalid data")
+        return values[0], values[1], values[2], data
+
     def close(self, *, timeout: int = 0) -> None:
         if self._closed:
             return
@@ -337,6 +391,61 @@ class _SingleAdcBackend(LCardBackend):
             self.ADC_RESOLUTION_BITS,
             self.ADC_VOLTAGE_DIVISOR,
         )
+
+    def adc_voltage_frame(
+        self,
+        *,
+        channel_count: int,
+        sample_rate: float,
+        samples_per_channel: int,
+        start_channel: int,
+        end_channel: int,
+        mode: LCardAdcInputMode = LCardAdcInputMode.DIFFERENTIAL,
+        auto_init: bool = True,
+        timeout: int = 0,
+    ) -> LCardAdcFrame:
+        if self.board not in (LCardBoardType.E140, LCardBoardType.E440):
+            raise ValueError(
+                f"{self.board.name} does not support ADC voltage frames"
+            )
+        channel_count = _uint32(channel_count, "channel_count")
+        samples_per_channel = _uint32(samples_per_channel, "samples_per_channel")
+        start_channel = _uint32(start_channel, "start_channel")
+        end_channel = _uint32(end_channel, "end_channel")
+        mode = LCardAdcInputMode(mode)
+        if channel_count == 0 or samples_per_channel == 0:
+            raise ValueError("ADC voltage frame requires channels and samples")
+        if end_channel < start_channel:
+            raise ValueError("end_channel must not be before start_channel")
+        if channel_count != end_channel - start_channel + 1:
+            raise ValueError(
+                "channel_count must match start_channel and end_channel"
+            )
+        if channel_count * samples_per_channel > 131072:
+            raise ValueError("ADC voltage frames support at most 131072 elements")
+        for channel in range(start_channel, end_channel + 1):
+            self._adc_channel_spec(channel, mode, None)
+        rate, channels, samples, data = self._adc_frame(
+            channel_count=channel_count,
+            sample_rate=sample_rate,
+            samples_per_channel=samples_per_channel,
+            start_channel=start_channel,
+            end_channel=end_channel,
+            mode=mode.value,
+            auto_init=auto_init,
+            timeout=timeout,
+        )
+        input_range = self._adc_input_range(None)
+        volts = [
+            _scaled_signed_adc_voltage(
+                value,
+                input_range,
+                self.ADC_RESOLUTION_BITS,
+                self.ADC_VOLTAGE_DIVISOR,
+            )
+            for value in data
+        ]
+        return LCardAdcFrame(rate, channels, samples, volts)
 
 
 class _SingleDacBackend(LCardBackend):
@@ -591,6 +700,60 @@ class _E2010AdcBackend(_SingleAdcBackend):
             14,
             8000.0,
         )
+
+    def adc_voltage_frame(
+        self,
+        *,
+        channel_count: int,
+        sample_rate: float,
+        samples_per_channel: int,
+        start_channel: int,
+        end_channel: int,
+        mode: int | None = None,
+        auto_init: bool = True,
+        timeout: int = 0,
+    ) -> LCardAdcFrame:
+        channel_count = _uint32(channel_count, "channel_count")
+        samples_per_channel = _uint32(samples_per_channel, "samples_per_channel")
+        start_channel = _uint32(start_channel, "start_channel")
+        end_channel = _uint32(end_channel, "end_channel")
+        if channel_count == 0 or samples_per_channel == 0:
+            raise ValueError("ADC voltage frame requires channels and samples")
+        if end_channel < start_channel:
+            raise ValueError("end_channel must not be before start_channel")
+        if channel_count != end_channel - start_channel + 1:
+            raise ValueError(
+                "channel_count must match start_channel and end_channel"
+            )
+        if channel_count * samples_per_channel > 131072:
+            raise ValueError("ADC voltage frames support at most 131072 elements")
+        for channel in range(start_channel, end_channel + 1):
+            self._adc_channel_spec(channel, LCardAdcInputMode.DIFFERENTIAL)
+        if mode is None:
+            mode = 0
+            for channel in range(start_channel, end_channel + 1):
+                mode |= self._ADC_SIGNAL_BITS[channel]
+        for channel in range(start_channel, end_channel + 1):
+            self._validate_adc_input_mask(channel, mode)
+        rate, channels, samples, data = self._adc_frame(
+            channel_count=channel_count,
+            sample_rate=sample_rate,
+            samples_per_channel=samples_per_channel,
+            start_channel=start_channel,
+            end_channel=end_channel,
+            mode=mode,
+            auto_init=auto_init,
+            timeout=timeout,
+        )
+        ranges = [
+            self._adc_input_range_from_mask(channel, mode)
+            for channel in range(start_channel, end_channel + 1)
+        ]
+        volts = [
+            _scaled_signed_adc_voltage(value, ranges[index % channels], 14, 8000.0)
+            for index, value in enumerate(data)
+        ]
+        return LCardAdcFrame(rate, channels, samples, volts)
 
 
 class E2010Backend(_SingleDacBackend, _E2010AdcBackend):

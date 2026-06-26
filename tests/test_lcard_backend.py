@@ -16,6 +16,7 @@ from nrpc import (
 )
 from nrpc.lcard_backend import (
     LCARD_CLOSE,
+    LCARD_ADC_FRAME,
     LCARD_IO_ASYNC,
     LCARD_LOAD_BIOS,
     LCARD_OPEN,
@@ -41,6 +42,11 @@ class FakeClient:
             if self.io_data is not None:
                 return [1250.0, self.io_data[:count]]
             return [1250.0, list(range(101, 101 + count))]
+        if function == LCARD_ADC_FRAME:
+            count = args[1].value * args[3].value
+            if self.io_data is not None:
+                return [2000.0, args[1].value, args[3].value, self.io_data[:count]]
+            return [2000.0, args[1].value, args[3].value, list(range(count))]
         if function in (LCARD_LOAD_BIOS, LCARD_CLOSE):
             return []
         raise AssertionError(function)
@@ -192,3 +198,41 @@ class LCardBackendTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             e140.adc_voltage(0, input_range=1.0)
+
+    def test_adc_voltage_frame_uses_stream_frame_call(self):
+        client = FakeClient()
+        client.io_data = [0, 4000, 0, 0]
+        e440 = LCardBackend.open(client, LCardBoardType.E440)
+
+        frame = e440.adc_voltage_frame(
+            channel_count=2,
+            sample_rate=400.0,
+            samples_per_channel=2,
+            start_channel=0,
+            end_channel=1,
+            mode=LCardAdcInputMode.SINGLE_ENDED,
+            auto_init=True,
+            timeout=3000,
+        )
+
+        self.assertEqual(frame.rate, 2000.0)
+        self.assertEqual(frame.channel_count, 2)
+        self.assertEqual(frame.samples_per_channel, 2)
+        self.assertEqual(frame.data, [0.0, 5.0, 0.0, 0.0])
+        self.assertEqual(client.calls[-1][0], LCARD_ADC_FRAME)
+        self.assertEqual(client.calls[-1][2], 3000)
+        self.assertEqual(client.calls[-1][1][1], TypedValue(DataType.UINT32, 2))
+        self.assertEqual(
+            client.calls[-1][1][6],
+            TypedValue(DataType.UINT32, LCardAdcInputMode.SINGLE_ENDED),
+        )
+        self.assertEqual(client.calls[-1][1][7], TypedValue(DataType.BOOL, True))
+
+        with self.assertRaises(ValueError):
+            e440.adc_voltage_frame(
+                channel_count=2,
+                sample_rate=400.0,
+                samples_per_channel=65537,
+                start_channel=0,
+                end_channel=1,
+            )

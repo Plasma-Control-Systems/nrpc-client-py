@@ -93,6 +93,7 @@ _FUNCTION_NAMES = {
     50: "read LCard slot information",
     51: "load LCard BIOS",
     52: "close LCard device",
+    53: "read LCard ADC voltage frame",
     64: "create NI-DAQmx analog voltage input task",
     65: "create NI-DAQmx thermocouple input task",
     66: "create NI-DAQmx analog voltage output task",
