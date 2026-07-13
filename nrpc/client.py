@@ -149,19 +149,34 @@ _ERROR_DESCRIPTIONS = {
 class RemoteError(NrpcError):
     """Error returned by a remote nRPC backend."""
 
-    def __init__(self, code: int, function_index: int, status: int = 1):
+    def __init__(
+        self,
+        code: int,
+        function_index: int,
+        status: int = 1,
+        detail: str | None = None,
+    ):
         self.code = code
         self.function_index = function_index
         self.status = status
+        self.detail = detail
         self.description = _ERROR_DESCRIPTIONS.get(
             code, "unknown remote backend error"
         )
         self.function_name = _FUNCTION_NAMES.get(
             function_index, "unregistered nRPC function"
         )
-        super().__init__(
+        message = (
             f"nRPC function {function_index} ({self.function_name}) failed: "
-            f"{self.description} (status {status}, error code {code})"
+            f"{self.description}"
+        )
+        if detail and detail != self.description:
+            message += f": {detail}"
+        elif detail:
+            message += f" ({detail})"
+        message += f" (status {status}, error code {code})"
+        super().__init__(
+            message
         )
 
 
@@ -402,9 +417,8 @@ class NrpcClient:
             finally:
                 self._socket.settimeout(previous_timeout)
         if status == 1:
-            if count != 0 or payload_size != 0:
-                raise ProtocolError("error response contains variables")
-            raise RemoteError(error, response_index)
+            detail = self._decode_error_detail(count, payload)
+            raise RemoteError(error, response_index, detail=detail)
         if status != 0:
             raise ProtocolError(f"invalid response status {status}")
         if error != 0:
@@ -581,3 +595,12 @@ class NrpcClient:
         if offset != len(payload):
             raise ProtocolError("response payload contains trailing bytes")
         return values
+
+    @staticmethod
+    def _decode_error_detail(count: int, payload: bytes) -> str | None:
+        if count == 0 and not payload:
+            return None
+        values = NrpcClient._decode_payload(count, payload)
+        if len(values) != 1 or not isinstance(values[0], str):
+            raise ProtocolError("error response detail must be a single string")
+        return values[0]

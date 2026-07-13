@@ -138,9 +138,8 @@ class AsyncNrpcClient:
         if reserved != 0:
             raise ProtocolError("response reserved field is not zero")
         if status == 1:
-            if count != 0 or payload_size != 0:
-                raise ProtocolError("error response contains variables")
-            raise RemoteError(error, response_index)
+            detail = NrpcClient._decode_error_detail(count, payload)
+            raise RemoteError(error, response_index, detail=detail)
         if status != 0:
             raise ProtocolError(f"invalid response status {status}")
         if error != 0:

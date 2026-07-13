@@ -13,13 +13,22 @@ from nrpc.client import (
 
 class CodecTests(unittest.TestCase):
     def test_remote_error_includes_readable_details(self):
-        error = RemoteError(5003, 64)
+        error = RemoteError(
+            5003,
+            64,
+            detail="DAQmxCreateChannel failed with NI-DAQmx error -200077",
+        )
 
         self.assertEqual(error.code, 5003)
         self.assertEqual(error.function_index, 64)
         self.assertEqual(error.status, 1)
+        self.assertEqual(
+            error.detail,
+            "DAQmxCreateChannel failed with NI-DAQmx error -200077",
+        )
         self.assertEqual(error.description, "NI-DAQmx task creation failed")
         self.assertIn("create NI-DAQmx analog voltage input task", str(error))
+        self.assertIn("DAQmxCreateChannel failed", str(error))
         self.assertIn("status 1, error code 5003", str(error))
 
     def test_unknown_remote_error_has_readable_fallback(self):
@@ -35,6 +44,22 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(
             error.description, "sleep expects one uint32 duration"
         )
+
+    def test_error_detail_payload_decodes_as_string(self):
+        payload = (
+            struct.pack("!B3xII4x", DataType.STRING, 13, 13)
+            + b"native fault\0"
+        )
+
+        self.assertEqual(
+            NrpcClient._decode_error_detail(1, payload),
+            "native fault",
+        )
+
+    def test_malformed_error_detail_payload_is_rejected(self):
+        payload = struct.pack("!B3xII4x", DataType.UINT32, 4, 1) + b"\0\0\0\x01"
+        with self.assertRaises(ProtocolError):
+            NrpcClient._decode_error_detail(1, payload)
 
     def test_request_uses_network_byte_order(self):
         packet = _encode_request(
