@@ -15,6 +15,15 @@ from .nidaqmx_backend import (
     NidaqmxTerminalConfig,
     NidaqmxThermocoupleType,
 )
+from .lcard_backend import (
+    LcardAdcChannel,
+    LcardAdcFrame,
+    LcardAdcInputMode,
+    LcardCapability,
+    LcardDacWriteResult,
+    LcardDevice,
+    LcardDeviceInfo,
+)
 from .serial_backend import (
     SerialBackend,
     SerialFlowControl,
@@ -35,6 +44,13 @@ __all__ = [
     "NidaqmxTask",
     "NidaqmxTerminalConfig",
     "NidaqmxThermocoupleType",
+    "LcardAdcChannel",
+    "LcardAdcFrame",
+    "LcardAdcInputMode",
+    "LcardCapability",
+    "LcardDacWriteResult",
+    "LcardDevice",
+    "LcardDeviceInfo",
     "ProtocolError",
     "RemoteError",
     "SerialBackend",

@@ -91,3 +91,20 @@ python examples/nidaqmx_voltage_input.py `
 
 The server must be built with `NRPC_ENABLE_NIDAQMX_BACKEND=ON`. Device and
 channel names can be confirmed in NI Measurement & Automation Explorer.
+
+## LCard Raw ADC
+
+Install LComp on the Windows server and supply a server-local BIOS/PLD path for
+boards that require downloadable firmware:
+
+```powershell
+python examples/lcard_raw_adc.py `
+  --slot 0 `
+  --firmware "C:\Program Files (x86)\LCard\LIBRARY\BIOS\L780.bio" `
+  --channel 0 `
+  --range 10 `
+  --timeout 1000
+```
+
+Omit `--firmware` for boards with resident firmware. The printed ADC values
+are signed raw codes, not volts.

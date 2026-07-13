@@ -11,6 +11,8 @@ class PublicApiTests(unittest.TestCase):
         self.assertIn("NrpcValue", nrpc.__all__)
         self.assertIn("SerialBackend", nrpc.__all__)
         self.assertIn("TcpBackend", nrpc.__all__)
+        self.assertIn("LcardDevice", nrpc.__all__)
+        self.assertIn("LcardAdcChannel", nrpc.__all__)
         self.assertFalse(hasattr(nrpc, "AsyncNrpcClient"))
 
 

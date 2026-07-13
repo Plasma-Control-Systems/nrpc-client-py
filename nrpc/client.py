@@ -9,6 +9,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
 
 if TYPE_CHECKING:
+    from .lcard_backend import LcardDevice
     from .nidaqmx_backend import (
         NidaqmxCjcSource,
         NidaqmxTask,
@@ -98,6 +99,12 @@ _FUNCTION_NAMES = {
     72: "read NI-DAQmx digital samples",
     73: "write NI-DAQmx digital samples",
     74: "close NI-DAQmx task",
+    80: "open LCard device",
+    81: "read LCard ADC code",
+    82: "read LCard ADC frame",
+    83: "write LCard DAC code",
+    84: "write LCard DAC frames",
+    85: "close LCard device",
 }
 
 _ERROR_DESCRIPTIONS = {
@@ -129,6 +136,13 @@ _ERROR_DESCRIPTIONS = {
     5004: "unknown NI-DAQmx task handle",
     5005: "NI-DAQmx operation failed",
     5006: "operation is invalid for the NI-DAQmx channel type",
+    6001: "invalid LCard arguments",
+    6002: "LCard WLCOMP/LComp libraries could not be loaded",
+    6003: "LCard device open failed",
+    6004: "unknown LCard device handle",
+    6005: "unsupported LCard operation",
+    6006: "LCard operation failed",
+    6007: "LCard operation timed out",
 }
 
 
@@ -419,6 +433,17 @@ class NrpcClient:
         from .tcp_backend import TcpBackend
 
         return TcpBackend(self, host, port, timeout=timeout)
+
+    def open_lcard(
+        self, slot: int, firmware_path: str | None = None, *, timeout: int = 5000
+    ) -> "LcardDevice":
+        """Open a server-side LCard device and return its proxy."""
+
+        from .lcard_backend import LcardDevice
+
+        return LcardDevice.open(
+            self, slot, firmware_path=firmware_path, timeout=timeout
+        )
 
     def create_nidaqmx_ai_voltage(
         self, physical_channel: str, minimum: float = -10.0,

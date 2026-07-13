@@ -137,6 +137,27 @@ with NrpcClient("127.0.0.1", 9000) as client:
 Factories are provided for voltage and thermocouple inputs, voltage outputs,
 and digital inputs and outputs. Tasks are cleared on close or disconnect.
 
+## LCard Backend
+
+The Windows server can host LCard devices through the vendor WLCOMP adapter while the Python
+client remains platform-independent. ADC and DAC values are raw codes:
+
+```python
+from nrpc import LcardAdcChannel, NrpcClient
+
+with NrpcClient("127.0.0.1", 9000) as client:
+    with client.open_lcard(0, firmware_path=r"C:\LCard\L780.bio") as device:
+        channel = LcardAdcChannel(0, 10.0)
+        print(device.info)
+        print(device.read_adc(channel, timeout=1000))
+        print(device.read_adc_frame([channel], rate_khz=100, timeout=1000))
+```
+
+Use `LcardAdcChannel.raw(code)` when an application already has a vendor
+logical-channel code. Timed DAC output accepts equal-length DAC0 and DAC1 code
+arrays and reports the hardware-normalized frame rate. Handles and active
+streams are released on close or client disconnect.
+
 ## Errors
 
 - `RemoteError`: the server or backend returned an error. Its message includes
