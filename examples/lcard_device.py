@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect an LCard device and perform simple asynchronous I/O."""
+"""Inspect an LCard device and perform simple I/O."""
 
 import argparse
 
@@ -65,7 +65,7 @@ def main() -> None:
     parser.add_argument(
         "--dac-output",
         type=integer,
-        help="optional asynchronous DAC value to write",
+        help="optional DAC value to write",
     )
     parser.add_argument("--timeout", type=int, default=1000)
     arguments = parser.parse_args()

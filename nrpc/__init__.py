@@ -1,19 +1,4 @@
-"""Public API for the synchronous and asynchronous nRPC Python client."""
-
-from .async_client import AsyncNrpcClient
-from .async_lcard_backend import (
-    AsyncE140Backend,
-    AsyncE154Backend,
-    AsyncE2010Backend,
-    AsyncE310Backend,
-    AsyncE440Backend,
-    AsyncLCardBackend,
-    AsyncL780Backend,
-    AsyncL791Backend,
-)
-from .async_nidaqmx_backend import AsyncNidaqmxTask
-from .async_serial_backend import AsyncSerialBackend
-from .async_tcp_backend import AsyncTcpBackend
+"""Public API for the synchronous nRPC Python client."""
 from .client import (
     DataType,
     NrpcClient,
@@ -33,8 +18,6 @@ from .lcard_backend import (
     L791Backend,
     LCardAdcInputMode,
     LCardAdcFrame,
-    LCardAsyncOperation,
-    LCardAsyncResult,
     LCardBackend,
     LCardBoardType,
     LCardSlotInfo,
@@ -57,23 +40,9 @@ __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
-    "AsyncNrpcClient",
-    "AsyncNidaqmxTask",
-    "AsyncLCardBackend",
-    "AsyncL780Backend",
-    "AsyncL791Backend",
-    "AsyncE140Backend",
-    "AsyncE154Backend",
-    "AsyncE2010Backend",
-    "AsyncE310Backend",
-    "AsyncE440Backend",
-    "AsyncSerialBackend",
-    "AsyncTcpBackend",
     "DataType",
     "LCardAdcInputMode",
     "LCardAdcFrame",
-    "LCardAsyncOperation",
-    "LCardAsyncResult",
     "LCardBackend",
     "LCardBoardType",
     "LCardSlotInfo",

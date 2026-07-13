@@ -1,7 +1,7 @@
 # nRPC Python Client
 
-`nrpc-client` is the synchronous and asynchronous Python client library for
-nRPC 0.1.0. It is dependency-free, typed, and supports Python 3.10 or newer on
+`nrpc-client` is the synchronous Python client library for nRPC 0.1.0. It is
+dependency-free, typed, and supports Python 3.10 or newer on
 Linux, macOS, and Windows. The protocol definition is included in
 [SPEC.md](SPEC.md).
 
@@ -52,34 +52,10 @@ Plain Python values map as follows:
 
 Use `TypedValue` when the exact numeric type or an array is required.
 
-## Async RPC
-
-The asyncio interface uses the same values and exceptions as the synchronous
-client:
-
-```python
-import asyncio
-
-from nrpc import AsyncNrpcClient
-
-
-async def main() -> None:
-    async with AsyncNrpcClient("127.0.0.1", 9000) as client:
-        response = await client.call(0, ["hello"], timeout=1000)
-        print(response)
-
-
-asyncio.run(main())
-```
-
-For explicit lifecycle management, use
-`client = await AsyncNrpcClient.connect(...)` and `await client.close()`.
-
 ## TLS
 
 Pass an `ssl.SSLContext` to encrypt the connection and verify the server
-certificate. The same options are supported by `AsyncNrpcClient` and its
-`connect` factory:
+certificate:
 
 ```python
 import ssl
@@ -117,15 +93,6 @@ with NrpcClient("127.0.0.1", 9000) as client:
 Instrument protocols such as SCPI belong in application code and are composed
 from `write`, `read`, and `read_until`.
 
-The asynchronous equivalent is opened and used with `await`:
-
-```python
-async with AsyncNrpcClient("127.0.0.1", 9000) as client:
-    async with await client.open_tcp_backend("192.0.2.10", 5025) as tcp:
-        await tcp.write(b"*IDN?\n", timeout=1000)
-        response = await tcp.read_until(b"\n", timeout=1000)
-```
-
 ## Serial Backend
 
 `SerialBackend` controls a serial port opened by the nRPC server through
@@ -151,14 +118,11 @@ with NrpcClient("127.0.0.1", 9000) as client:
 Use port names such as `/dev/ttyUSB0`, `/dev/cu.usbserial-*`, or `COM7`
 according to the operating system.
 
-`AsyncNrpcClient.open_serial_backend` returns an `AsyncSerialBackend` with
-async `write`, `read`, `read_until`, and `close` methods.
-
 ## LCard Backend
 
 On a Windows server built with the LCard lcomp/wlcomp backend,
 `LCardBackend` opens a board by slot and provides the wrapper's common
-ADC stream sampling and asynchronous DAC output operations:
+ADC stream sampling and DAC output operations:
 
 ```python
 from nrpc import E140Backend, LCardAdcInputMode, LCardBoardType, NrpcClient
@@ -181,8 +145,7 @@ proxy is device-specific: `L780Backend`, `L791Backend`, `E440Backend`,
 `E140Backend`, `E154Backend`, `E2010Backend`, or `E310Backend`. Their helper
 sets reflect the server's supported pipeline; for example, E2010 uses stream
 ADC sampling with an ADC input mask, E310 exposes slot/open/close only, and
-L791 writes DAC values as a channel pair. The asynchronous client returns the
-matching `Async...Backend` class with awaited helpers.
+L791 writes DAC values as a channel pair.
 For E140 and E440 ADC reads, `input_mode` accepts
 `LCardAdcInputMode.DIFFERENTIAL`, `SINGLE_ENDED`, or `ZERO`; the client encodes
 these as the same channel bits used by LCard's stream API.
@@ -213,8 +176,7 @@ with NrpcClient("127.0.0.1", 9000) as client:
 ```
 
 Factories are provided for voltage and thermocouple inputs, voltage outputs,
-and digital inputs and outputs. `AsyncNrpcClient` provides the same factories;
-its task operations are awaited. Tasks are cleared on close or disconnect.
+and digital inputs and outputs. Tasks are cleared on close or disconnect.
 
 ## Errors
 

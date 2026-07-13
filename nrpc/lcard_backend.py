@@ -32,7 +32,7 @@ class LCardBoardType(IntEnum):
     E310 = 77
 
 
-class LCardAsyncOperation(IntEnum):
+class _LCardIoOperation(IntEnum):
     ADC_CONFIG = 3
     TTL_CONFIG = 4
     DAC_CONFIG = 5
@@ -59,7 +59,7 @@ class LCardSlotInfo:
 
 
 @dataclass(frozen=True)
-class LCardAsyncResult:
+class _LCardIoResult:
     rate: float
     data: list[int]
 
@@ -192,9 +192,9 @@ class LCardBackend:
             timeout=timeout,
         )
 
-    def _io_async(
+    def _io(
         self,
-        operation: LCardAsyncOperation,
+        operation: _LCardIoOperation,
         *,
         channel_count: int = 0,
         channels: Iterable[int] = (),
@@ -202,7 +202,7 @@ class LCardBackend:
         rate: float = 0.0,
         mode: int = 0,
         timeout: int = 0,
-    ) -> LCardAsyncResult:
+    ) -> _LCardIoResult:
         self._ensure_open()
         channels = _uint32_values(channels, "channels")
         data = _uint32_values(data, "data")
@@ -223,7 +223,7 @@ class LCardBackend:
         )
         if len(values) != 2 or not isinstance(values[0], float):
             raise RuntimeError("LCard IoAsync returned invalid data")
-        return LCardAsyncResult(
+        return _LCardIoResult(
             values[0], _decode_uint32_values(values[1], "IoAsync")
         )
 
@@ -360,8 +360,8 @@ class _SingleAdcBackend(LCardBackend):
         timeout: int = 0,
     ) -> int:
         channel_spec = self._adc_channel_spec(channel, input_mode, input_range)
-        result = self._io_async(
-            LCardAsyncOperation.ADC_INPUT,
+        result = self._io(
+            _LCardIoOperation.ADC_INPUT,
             channel_count=1,
             channels=[channel_spec],
             rate=rate,
@@ -461,8 +461,8 @@ class _SingleDacBackend(LCardBackend):
             )
         if not 0 <= value <= self.DAC_MAX:
             raise ValueError(f"value must be between 0 and {self.DAC_MAX}")
-        self._io_async(
-            LCardAsyncOperation.DAC_OUTPUT,
+        self._io(
+            _LCardIoOperation.DAC_OUTPUT,
             channel_count=1,
             data=[value],
             mode=channel,
@@ -499,8 +499,8 @@ class L791Backend(_SingleAdcBackend):
         for value in (value_a, value_b):
             if not 0 <= value <= 0xFFF:
                 raise ValueError("L791 DAC values must be between 0 and 4095")
-        self._io_async(
-            LCardAsyncOperation.DAC_OUTPUT,
+        self._io(
+            _LCardIoOperation.DAC_OUTPUT,
             channel_count=2,
             channels=[channel_a, channel_b],
             data=[value_a, value_b],
@@ -547,8 +547,8 @@ class E140Backend(_SingleDacBackend, _SingleAdcBackend):
         for value in (value_a, value_b):
             if not 0 <= value <= 0xFFFF:
                 raise ValueError("E140 dual DAC values must fit uint16")
-        self._io_async(
-            LCardAsyncOperation.DAC_OUTPUT,
+        self._io(
+            _LCardIoOperation.DAC_OUTPUT,
             channel_count=1,
             data=[value_a, value_b],
             mode=2,
@@ -565,8 +565,8 @@ class E154Backend(_SingleAdcBackend):
     def write_dac(self, value: int, *, timeout: int = 0) -> None:
         if not 0 <= value <= 0xFF:
             raise ValueError("E154 DAC value must be between 0 and 255")
-        self._io_async(
-            LCardAsyncOperation.DAC_OUTPUT,
+        self._io(
+            _LCardIoOperation.DAC_OUTPUT,
             channel_count=1,
             data=[value],
             timeout=timeout,
@@ -658,8 +658,8 @@ class _E2010AdcBackend(_SingleAdcBackend):
         channel_spec = self._adc_channel_spec(channel, input_mode)
         if adc_input_mask is None:
             adc_input_mask = self._adc_mode(channel_spec, input_mode)
-        result = self._io_async(
-            LCardAsyncOperation.ADC_INPUT,
+        result = self._io(
+            _LCardIoOperation.ADC_INPUT,
             channel_count=1,
             channels=[channel_spec],
             rate=rate,

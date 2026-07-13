@@ -1,8 +1,8 @@
 import ssl
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from nrpc import AsyncNrpcClient, NrpcClient
+from nrpc import NrpcClient
 
 
 class TlsClientTests(unittest.TestCase):
@@ -44,32 +44,6 @@ class TlsClientTests(unittest.TestCase):
     def test_server_hostname_requires_tls(self):
         with self.assertRaises(ValueError):
             NrpcClient("localhost", 9000, server_hostname="localhost")
-        with self.assertRaises(ValueError):
-            AsyncNrpcClient("localhost", 9000, server_hostname="localhost")
-
-
-class AsyncTlsClientTests(unittest.IsolatedAsyncioTestCase):
-    @patch("nrpc.async_client.asyncio.open_connection", new_callable=AsyncMock)
-    async def test_async_client_passes_tls_to_asyncio(self, open_connection):
-        reader = Mock()
-        writer = Mock()
-        context = ssl.create_default_context()
-        open_connection.return_value = (reader, writer)
-        client = AsyncNrpcClient(
-            "127.0.0.1",
-            9000,
-            ssl_context=context,
-            server_hostname="nrpc.example.com",
-        )
-
-        await client._ensure_connected()
-
-        open_connection.assert_awaited_once_with(
-            "127.0.0.1",
-            9000,
-            ssl=context,
-            server_hostname="nrpc.example.com",
-        )
 
 
 if __name__ == "__main__":

@@ -17,13 +17,6 @@ Calls function `0`, the sample echo backend:
 python examples/basic_rpc.py --port 9000
 ```
 
-The asynchronous client can call the same backend without blocking the event
-loop:
-
-```sh
-python examples/async_rpc.py --port 9000
-```
-
 ## TLS RPC
 
 Start a TLS-only server with its certificate and private key:
