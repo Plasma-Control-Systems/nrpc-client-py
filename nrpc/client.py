@@ -9,7 +9,6 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
 
 if TYPE_CHECKING:
-    from .lcard_backend import LCardBackend, LCardBoardType
     from .nidaqmx_backend import (
         NidaqmxCjcSource,
         NidaqmxTask,
@@ -88,12 +87,6 @@ _FUNCTION_NAMES = {
     33: "write to serial port",
     34: "read from serial port",
     35: "close serial port",
-    48: "open LCard device",
-    49: "perform LCard asynchronous I/O",
-    50: "read LCard slot information",
-    51: "load LCard BIOS",
-    52: "close LCard device",
-    53: "read LCard ADC voltage frame",
     64: "create NI-DAQmx analog voltage input task",
     65: "create NI-DAQmx thermocouple input task",
     66: "create NI-DAQmx analog voltage output task",
@@ -130,13 +123,6 @@ _ERROR_DESCRIPTIONS = {
     3006: "serial port read failed",
     3007: "serial port operation timed out",
     3008: "unsupported serial port operation",
-    4001: "invalid LCard arguments",
-    4002: "LCard library could not be loaded",
-    4003: "LCard device open failed",
-    4004: "unknown LCard handle",
-    4005: "LCard operation failed",
-    4006: "unsupported LCard operation",
-    4007: "LCard operation timed out",
     5001: "invalid NI-DAQmx arguments",
     5002: "NI-DAQmx library could not be loaded",
     5003: "NI-DAQmx task creation failed",
@@ -433,22 +419,6 @@ class NrpcClient:
         from .tcp_backend import TcpBackend
 
         return TcpBackend(self, host, port, timeout=timeout)
-
-    def open_lcard_backend(
-        self,
-        board: "LCardBoardType",
-        slot: int = 0,
-        *,
-        bios: str = "",
-        timeout: int = 5000,
-    ) -> "LCardBackend":
-        """Open an LCard device; empty ``bios`` lets the server auto-load it."""
-
-        from .lcard_backend import LCardBackend
-
-        return LCardBackend.open(
-            self, board, slot, bios=bios, timeout=timeout
-        )
 
     def create_nidaqmx_ai_voltage(
         self, physical_channel: str, minimum: float = -10.0,

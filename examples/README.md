@@ -71,52 +71,6 @@ python examples/serial_scpi.py \
 
 On Windows, use a port name such as `COM7`.
 
-## LCard Device
-
-On Windows, inspect slot `0` and read one ADC voltage sample:
-
-```powershell
-python examples/lcard_device.py `
-  --nrpc-port 9000 `
-  --board E140 `
-  --slot 0 `
-  --adc-channel 0 `
-  --adc-input-mode single-ended `
-  --adc-input-range 2.5
-```
-
-The Windows server loads a matching BIOS or PLD file automatically from the
-default LCard BIOS directory when one is present. Pass `--bios` only to
-override that lookup, and optionally exercise DAC output:
-
-```powershell
-python examples/lcard_device.py `
-  --board E140 `
-  --bios C:\LCard\BIOS\L761.bio `
-  --dac-output 123
-```
-
-The nRPC server must be built on Windows with the LCard backend enabled and
-the matching lcomp/wlcomp installation available.
-
-## E14-440 ADC Channels
-
-Read several E14-440 ADC channels with per-channel input mode and voltage
-range:
-
-```powershell
-python examples/e440_adc_channels.py `
-  --nrpc-port 9000 `
-  --slot 0 `
-  --channel 0:differential:10 `
-  --channel 1:single-ended:2.5 `
-  --channel 2:zero:0.625
-```
-
-Each `--channel` value is `LINE[:MODE[:RANGE]]`. Supported modes are
-`differential`, `single-ended`, and `zero`; supported E14-440 ranges are
-`10`, `2.5`, `0.625`, and `0.15625` volts.
-
 ## NI-DAQmx Voltage Input
 
 On the Windows machine hosting the nRPC server, install the NI-DAQmx runtime
