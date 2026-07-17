@@ -13,6 +13,7 @@ from nrpc.lcard_backend import (
 class FakeClient:
     def __init__(self):
         self.calls = []
+        self.adc_frame_result = [[-1, 2], 99.5]
 
     def call(self, function, args=(), timeout=0):
         self.calls.append((function, list(args), timeout))
@@ -21,7 +22,7 @@ class FakeClient:
         if function == LCARD_READ_ADC:
             return [-123]
         if function == LCARD_READ_ADC_FRAME:
-            return [[-1, 2], 99.5]
+            return self.adc_frame_result
         if function == LCARD_WRITE_DAC:
             return []
         if function == LCARD_WRITE_DAC_FRAMES:
@@ -56,6 +57,14 @@ class LcardBackendTests(unittest.TestCase):
         self.assertEqual(result.frames_written, 2)
         self.assertEqual(client.calls[-1][1][1], TypedValue(DataType.UINT16, [1, 2]))
         self.assertEqual(client.calls[-1][1][2], TypedValue(DataType.UINT16, [3, 4]))
+
+    def test_single_channel_frame_normalizes_scalar_code(self):
+        client = FakeClient()
+        client.adc_frame_result = [-17, 1000.0]
+        device = LcardDevice.open(client, 0)
+        frame = device.read_adc_frame([LcardAdcChannel(0)], rate_khz=1000.0)
+        self.assertEqual(frame.codes, [-17])
+        self.assertEqual(frame.actual_rate_khz, 1000.0)
 
     def test_invalid_inputs_are_rejected_locally(self):
         client = FakeClient()

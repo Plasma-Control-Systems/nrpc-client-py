@@ -165,12 +165,20 @@ class LcardDevice:
             TypedValue(DataType.UINT64, self._handle), *arguments,
             TypedValue(DataType.FLOAT64, _rate(rate_khz, "rate_khz")),
         ], timeout=timeout)
-        if (len(values) != 2 or not isinstance(values[0], list)
-                or len(values[0]) != len(requested)
-                or any(not isinstance(code, int) or isinstance(code, bool) for code in values[0])
-                or not isinstance(values[1], float)):
+        if len(values) != 2 or not isinstance(values[1], float):
             raise RuntimeError("LCard ADC frame returned invalid data")
-        return LcardAdcFrame(values[0], values[1])
+        raw_codes = values[0]
+        if (len(requested) == 1 and isinstance(raw_codes, int)
+                and not isinstance(raw_codes, bool)):
+            codes = [raw_codes]
+        elif isinstance(raw_codes, list):
+            codes = raw_codes
+        else:
+            raise RuntimeError("LCard ADC frame returned invalid data")
+        if (len(codes) != len(requested)
+                or any(not isinstance(code, int) or isinstance(code, bool) for code in codes)):
+            raise RuntimeError("LCard ADC frame returned invalid data")
+        return LcardAdcFrame(codes, values[1])
 
     def write_dac(self, channel: int, code: int, *, timeout: int = 5000) -> None:
         self._ensure_open()
