@@ -19,6 +19,7 @@ LCARD_CLOSE = 85
 
 MAX_ADC_CHANNELS = 128
 MAX_DAC_FRAMES = 262144
+ADC_FULL_SCALE_CODE = 8000
 
 
 class LcardCapability(IntFlag):
@@ -79,6 +80,12 @@ class LcardAdcFrame:
 
 
 @dataclass(frozen=True)
+class LcardAdcVoltageFrame:
+    voltages: list[float]
+    actual_rate_khz: float
+
+
+@dataclass(frozen=True)
 class LcardDacWriteResult:
     frames_written: int
     actual_rate_khz: float
@@ -101,6 +108,14 @@ def _rate(value: float, name: str) -> float:
     if not math.isfinite(result) or result <= 0:
         raise ValueError(f"{name} must be positive and finite")
     return result
+
+
+def _code_to_volts(code: int, channel: LcardAdcChannel) -> float:
+    if not isinstance(code, int) or isinstance(code, bool) or not -0x8000 <= code <= 0x7FFF:
+        raise ValueError("code must be an int16 integer")
+    if channel.is_raw:
+        raise ValueError("raw ADC channels do not specify a voltage range")
+    return code * channel.range / ADC_FULL_SCALE_CODE
 
 
 def _codes(values: Iterable[int], name: str) -> list[int]:
@@ -157,6 +172,14 @@ class LcardDevice:
             raise RuntimeError("LCard ADC read returned invalid data")
         return values[0]
 
+    def read_adc_voltage(self, channel: LcardAdcChannel, *, timeout: int = 5000) -> float:
+        """Read one ADC sample and convert its normalized code to volts."""
+        if not isinstance(channel, LcardAdcChannel):
+            raise ValueError("channel must be an LcardAdcChannel value")
+        if channel.is_raw:
+            raise ValueError("raw ADC channels do not specify a voltage range")
+        return _code_to_volts(self.read_adc(channel, timeout=timeout), channel)
+
     def read_adc_frame(self, channels: Sequence[LcardAdcChannel] | Iterable[LcardAdcChannel],
                        rate_khz: float = 100.0, *, timeout: int = 5000) -> LcardAdcFrame:
         self._ensure_open()
@@ -179,6 +202,24 @@ class LcardDevice:
                 or any(not isinstance(code, int) or isinstance(code, bool) for code in codes)):
             raise RuntimeError("LCard ADC frame returned invalid data")
         return LcardAdcFrame(codes, values[1])
+
+    def read_adc_voltage_frame(
+        self,
+        channels: Sequence[LcardAdcChannel] | Iterable[LcardAdcChannel],
+        rate_khz: float = 100.0,
+        *,
+        timeout: int = 5000,
+    ) -> LcardAdcVoltageFrame:
+        """Read an ADC frame and convert every normalized code to volts."""
+        requested = list(channels)
+        _channels(requested)
+        if any(channel.is_raw for channel in requested):
+            raise ValueError("raw ADC channels do not specify a voltage range")
+        frame = self.read_adc_frame(requested, rate_khz=rate_khz, timeout=timeout)
+        return LcardAdcVoltageFrame(
+            [_code_to_volts(code, channel) for code, channel in zip(frame.codes, requested)],
+            frame.actual_rate_khz,
+        )
 
     def write_dac(self, channel: int, code: int, *, timeout: int = 5000) -> None:
         self._ensure_open()

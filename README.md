@@ -366,9 +366,9 @@ sampling and explicit clock configuration are outside the nRPC 0.1.0 subset.
 ## LCard backend
 
 LCard devices run behind the Windows server's WLCOMP/LComp adapter. The Python
-API is platform-independent and intentionally exposes raw ADC and DAC hardware
-codes. Convert codes to engineering units in application code using the
-board's metrology information.
+API is platform-independent. Existing ADC methods expose raw hardware codes;
+voltage variants convert normalized ADC codes using the selected full-scale
+range. DAC methods continue to use raw hardware codes.
 
 Open a device by server-local slot:
 
@@ -405,7 +405,9 @@ applications that already have a vendor logical-channel code can use
 | Method | Result |
 | --- | --- |
 | `read_adc(channel, *, timeout=5000)` | one signed raw ADC code |
+| `read_adc_voltage(channel, *, timeout=5000)` | one ADC sample converted to volts |
 | `read_adc_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcFrame(codes, actual_rate_khz)` |
+| `read_adc_voltage_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcVoltageFrame(voltages, actual_rate_khz)` |
 | `write_dac(channel, code, *, timeout=5000)` | writes one uint16 code to DAC 0 or 1 |
 | `write_dac_frames(dac0, dac1, frame_rate_khz, *, timeout=5000)` | `LcardDacWriteResult(frames_written, actual_rate_khz)` |
 | `close(*, timeout=5000)` | stops streams and releases the device |
@@ -414,6 +416,12 @@ ADC frames accept 1..128 channels. Timed DAC arrays must be equal-length,
 contain 1..262,144 uint16 codes each, and describe simultaneous DAC0/DAC1
 frames. Capability flags are `READ_ADC`, `READ_ADC_FRAME`, `WRITE_DAC`, and
 `WRITE_DAC_FRAMES`; not every board supports every operation.
+
+Voltage conversion uses the LCard normalized 14-bit ADC scale, where codes
+`-8000` and `+8000` represent the negative and positive limits of the selected
+range: `volts = code * range / 8000`. It does not apply additional metrology
+correction. Voltage methods reject `LcardAdcChannel.raw(...)`, because a raw
+logical-channel code does not carry an unambiguous full-scale range.
 
 ```python
 from nrpc import LcardAdcChannel, NrpcClient
@@ -425,6 +433,7 @@ with NrpcClient("127.0.0.1", 9000) as client:
         channel = LcardAdcChannel(0, range=10.0)
         print(device.info)
         print("single code:", device.read_adc(channel, timeout=1000))
+        print("single voltage:", device.read_adc_voltage(channel, timeout=1000))
         frame = device.read_adc_frame(
             [channel], rate_khz=100.0, timeout=1000
         )

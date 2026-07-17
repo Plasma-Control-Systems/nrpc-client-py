@@ -2,7 +2,7 @@ import unittest
 
 from nrpc import (
     DataType, LcardAdcChannel, LcardAdcInputMode, LcardCapability,
-    LcardDevice, TypedValue,
+    LcardAdcVoltageFrame, LcardDevice, TypedValue,
 )
 from nrpc.lcard_backend import (
     LCARD_CLOSE, LCARD_OPEN, LCARD_READ_ADC, LCARD_READ_ADC_FRAME,
@@ -65,6 +65,38 @@ class LcardBackendTests(unittest.TestCase):
         frame = device.read_adc_frame([LcardAdcChannel(0)], rate_khz=1000.0)
         self.assertEqual(frame.codes, [-17])
         self.assertEqual(frame.actual_rate_khz, 1000.0)
+
+    def test_adc_codes_are_converted_to_volts(self):
+        client = FakeClient()
+        device = LcardDevice.open(client, 0)
+
+        self.assertAlmostEqual(
+            device.read_adc_voltage(LcardAdcChannel(0, range=10.0)),
+            -0.15375,
+        )
+
+        client.adc_frame_result = [[8000, -4000], 99.5]
+        frame = device.read_adc_voltage_frame(
+            [LcardAdcChannel(0, range=10.0), LcardAdcChannel(1, range=2.5)],
+            rate_khz=100.0,
+            timeout=200,
+        )
+        self.assertEqual(frame, LcardAdcVoltageFrame([10.0, -1.25], 99.5))
+        self.assertEqual(client.calls[-1][0], LCARD_READ_ADC_FRAME)
+        self.assertEqual(client.calls[-1][2], 200)
+
+    def test_voltage_conversion_rejects_raw_channels_without_rpc(self):
+        client = FakeClient()
+        device = LcardDevice.open(client, 0)
+        call_count = len(client.calls)
+
+        with self.assertRaisesRegex(ValueError, "do not specify a voltage range"):
+            device.read_adc_voltage(LcardAdcChannel.raw(0x41))
+        with self.assertRaisesRegex(ValueError, "do not specify a voltage range"):
+            device.read_adc_voltage_frame(
+                [LcardAdcChannel(0), LcardAdcChannel.raw(0x41)]
+            )
+        self.assertEqual(len(client.calls), call_count)
 
     def test_invalid_inputs_are_rejected_locally(self):
         client = FakeClient()
