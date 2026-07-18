@@ -27,7 +27,12 @@ def main() -> None:
             frame = device.read_adc_frame(
                 [channel], rate_khz=args.rate_khz, timeout=args.timeout
             )
-            print("frame:", frame.codes, "actual rate (kHz):", frame.actual_rate_khz)
+            print(
+                "first scan:", frame.codes[0],
+                "samples:", frame.sample_count,
+                "samples/channel:", frame.samples_per_channel,
+                "actual rate (kHz):", frame.actual_rate_khz,
+            )
 
 
 if __name__ == "__main__":

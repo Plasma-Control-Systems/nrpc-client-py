@@ -2,7 +2,7 @@ import unittest
 
 from nrpc import (
     DataType, LcardAdcChannel, LcardAdcInputMode, LcardCapability,
-    LcardAdcVoltageFrame, LcardDevice, TypedValue,
+    LcardAdcVoltageFrame, LcardDevice, LcardDeviceInfo, TypedValue,
 )
 from nrpc.lcard_backend import (
     LCARD_CLOSE, LCARD_OPEN, LCARD_READ_ADC, LCARD_READ_ADC_FRAME,
@@ -42,8 +42,16 @@ class LcardBackendTests(unittest.TestCase):
             frame = device.read_adc_frame([
                 LcardAdcChannel(0, 10.0), LcardAdcChannel.raw(0x41)
             ], rate_khz=100.0, timeout=200)
-            self.assertEqual(frame.codes, [-1, 2])
+            self.assertEqual(frame.codes, [[-1, 2]])
+            self.assertEqual(frame.sample_count, 2)
+            self.assertEqual(frame.channel_count, 2)
+            self.assertEqual(frame.samples_per_channel, 1)
             self.assertEqual(frame.actual_rate_khz, 99.5)
+            self.assertAlmostEqual(frame.time_step_seconds, 2 / 99500)
+            self.assertAlmostEqual(frame.duration_seconds, 2 / 99500)
+            self.assertEqual(
+                client.calls[-1][1][-1], TypedValue(DataType.UINT32, 131072)
+            )
         self.assertEqual(client.calls[0][1][0], TypedValue(DataType.UINT32, 2))
         self.assertEqual(client.calls[-1][0], LCARD_CLOSE)
         with self.assertRaises(RuntimeError):
@@ -63,8 +71,20 @@ class LcardBackendTests(unittest.TestCase):
         client.adc_frame_result = [-17, 1000.0]
         device = LcardDevice.open(client, 0)
         frame = device.read_adc_frame([LcardAdcChannel(0)], rate_khz=1000.0)
-        self.assertEqual(frame.codes, [-17])
+        self.assertEqual(frame.codes, [[-17]])
+        self.assertEqual(frame.sample_count, 1)
         self.assertEqual(frame.actual_rate_khz, 1000.0)
+
+    def test_frame_uses_only_complete_scans(self):
+        client = FakeClient()
+        client.adc_frame_result = [[1, 2, 3], 100.0]
+        device = LcardDevice.open(client, 0)
+        frame = device.read_adc_frame([LcardAdcChannel(i) for i in range(3)])
+
+        self.assertEqual(frame.codes, [[1, 2, 3]])
+        self.assertEqual(
+            client.calls[-1][1][-1], TypedValue(DataType.UINT32, 131070)
+        )
 
     def test_adc_codes_are_converted_to_volts(self):
         client = FakeClient()
@@ -75,13 +95,18 @@ class LcardBackendTests(unittest.TestCase):
             -0.15375,
         )
 
-        client.adc_frame_result = [[8000, -4000], 99.5]
+        client.adc_frame_result = [[8000, -4000, 4000, 8000], 99.5]
         frame = device.read_adc_voltage_frame(
             [LcardAdcChannel(0, range=10.0), LcardAdcChannel(1, range=2.5)],
             rate_khz=100.0,
             timeout=200,
         )
-        self.assertEqual(frame, LcardAdcVoltageFrame([10.0, -1.25], 99.5))
+        self.assertEqual(
+            frame,
+            LcardAdcVoltageFrame([[10.0, -1.25], [5.0, 2.5]], 99.5),
+        )
+        self.assertEqual(frame.sample_count, 4)
+        self.assertEqual(frame.samples_per_channel, 2)
         self.assertEqual(client.calls[-1][0], LCARD_READ_ADC_FRAME)
         self.assertEqual(client.calls[-1][2], 200)
 
@@ -111,6 +136,25 @@ class LcardBackendTests(unittest.TestCase):
             device.read_adc_frame([], 100)
         with self.assertRaises(ValueError):
             LcardAdcChannel(0, 10, LcardAdcInputMode(99))
+
+    def test_e14_channel_limit_depends_on_input_mode(self):
+        client = FakeClient()
+        info = LcardDeviceInfo(31, "E14-140", ord("B"), True,
+                               LcardCapability.READ_ADC_FRAME)
+        device = LcardDevice(client, 1, info)
+
+        with self.assertRaisesRegex(ValueError, "differential.*0 and 15"):
+            device.read_adc_frame([LcardAdcChannel(16)])
+        with self.assertRaisesRegex(ValueError, "zero.*0 and 15"):
+            device.read_adc_frame([
+                LcardAdcChannel(16, mode=LcardAdcInputMode.ZERO)
+            ])
+
+        client.adc_frame_result = [-17, 100.0]
+        frame = device.read_adc_frame([
+            LcardAdcChannel(31, mode=LcardAdcInputMode.COMMON_GROUND)
+        ])
+        self.assertEqual(frame.codes, [[-17]])
 
 
 if __name__ == "__main__":

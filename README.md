@@ -400,22 +400,34 @@ Input modes are `DIFFERENTIAL`, `COMMON_GROUND`, and `ZERO`. Advanced
 applications that already have a vendor logical-channel code can use
 `LcardAdcChannel.raw(code)`.
 
+E14-140 and E14-440 expose physical channels 0..15 in `DIFFERENTIAL` mode and
+0..31 in `COMMON_GROUND` mode. Their logical-channel mode bits are added by
+the server; callers should continue to pass physical channel numbers.
+
 ### Device API
 
 | Method | Result |
 | --- | --- |
 | `read_adc(channel, *, timeout=5000)` | one signed raw ADC code |
 | `read_adc_voltage(channel, *, timeout=5000)` | one ADC sample converted to volts |
-| `read_adc_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcFrame(codes, actual_rate_khz)` |
-| `read_adc_voltage_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcVoltageFrame(voltages, actual_rate_khz)` |
+| `read_adc_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcFrame(codes[time][channel], actual_rate_khz)` |
+| `read_adc_voltage_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcVoltageFrame(voltages[time][channel], actual_rate_khz)` |
 | `write_dac(channel, code, *, timeout=5000)` | writes one uint16 code to DAC 0 or 1 |
 | `write_dac_frames(dac0, dac1, frame_rate_khz, *, timeout=5000)` | `LcardDacWriteResult(frames_written, actual_rate_khz)` |
 | `close(*, timeout=5000)` | stops streams and releases the device |
 
-ADC frames accept 1..128 channels. Timed DAC arrays must be equal-length,
+ADC frames accept 1..128 channels and fill the 131,072-sample ADC buffer with
+complete channel scans. For channel counts that do not divide 131,072, the
+incomplete final scan is not requested. Timed DAC arrays must be equal-length,
 contain 1..262,144 uint16 codes each, and describe simultaneous DAC0/DAC1
 frames. Capability flags are `READ_ADC`, `READ_ADC_FRAME`, `WRITE_DAC`, and
 `WRITE_DAC_FRAMES`; not every board supports every operation.
+
+The returned matrices use time rows and channel columns. `sample_count` is the
+total number of values, `samples_per_channel` is the number of time rows, and
+`channel_count` is the row width. `time_step_seconds` uses the actual ADC point
+rate and equals `channel_count / (actual_rate_khz * 1000)`;
+`duration_seconds` equals `sample_count / (actual_rate_khz * 1000)`.
 
 Voltage conversion uses the LCard normalized 14-bit ADC scale, where codes
 `-8000` and `+8000` represent the negative and positive limits of the selected
@@ -437,7 +449,7 @@ with NrpcClient("127.0.0.1", 9000) as client:
         frame = device.read_adc_frame(
             [channel], rate_khz=100.0, timeout=1000
         )
-        print(frame.codes, frame.actual_rate_khz)
+        print(frame.codes[0], frame.samples_per_channel, frame.actual_rate_khz)
 ```
 
 ## Errors

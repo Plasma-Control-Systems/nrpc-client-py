@@ -18,6 +18,7 @@ LCARD_WRITE_DAC_FRAMES = 84
 LCARD_CLOSE = 85
 
 MAX_ADC_CHANNELS = 128
+MAX_ADC_SAMPLES = 131072
 MAX_DAC_FRAMES = 262144
 ADC_FULL_SCALE_CODE = 8000
 
@@ -75,14 +76,60 @@ class LcardDeviceInfo:
 
 @dataclass(frozen=True)
 class LcardAdcFrame:
-    codes: list[int]
+    codes: list[list[int]]
     actual_rate_khz: float
+
+    @property
+    def sample_count(self) -> int:
+        """Number of ADC samples returned in this frame."""
+        return sum(len(row) for row in self.codes)
+
+    @property
+    def channel_count(self) -> int:
+        """Number of channels in each time row."""
+        return len(self.codes[0]) if self.codes else 0
+
+    @property
+    def samples_per_channel(self) -> int:
+        """Number of time rows returned for every channel."""
+        return len(self.codes)
+
+    @property
+    def time_step_seconds(self) -> float:
+        """Time between adjacent rows at the actual ADC point rate."""
+        return self.channel_count / (self.actual_rate_khz * 1000.0)
+
+    @property
+    def duration_seconds(self) -> float:
+        """Nominal acquisition duration of all returned ADC points."""
+        return self.sample_count / (self.actual_rate_khz * 1000.0)
 
 
 @dataclass(frozen=True)
 class LcardAdcVoltageFrame:
-    voltages: list[float]
+    voltages: list[list[float]]
     actual_rate_khz: float
+
+    @property
+    def sample_count(self) -> int:
+        """Number of ADC samples returned in this frame."""
+        return sum(len(row) for row in self.voltages)
+
+    @property
+    def channel_count(self) -> int:
+        return len(self.voltages[0]) if self.voltages else 0
+
+    @property
+    def samples_per_channel(self) -> int:
+        return len(self.voltages)
+
+    @property
+    def time_step_seconds(self) -> float:
+        return self.channel_count / (self.actual_rate_khz * 1000.0)
+
+    @property
+    def duration_seconds(self) -> float:
+        return self.sample_count / (self.actual_rate_khz * 1000.0)
 
 
 @dataclass(frozen=True)
@@ -164,7 +211,8 @@ class LcardDevice:
 
     def read_adc(self, channel: LcardAdcChannel, *, timeout: int = 5000) -> int:
         self._ensure_open()
-        _, arguments = _channels([channel])
+        requested, arguments = _channels([channel])
+        self._validate_adc_channels(requested)
         values = self._client.call(LCARD_READ_ADC, [
             TypedValue(DataType.UINT64, self._handle), *arguments,
         ], timeout=timeout)
@@ -184,23 +232,30 @@ class LcardDevice:
                        rate_khz: float = 100.0, *, timeout: int = 5000) -> LcardAdcFrame:
         self._ensure_open()
         requested, arguments = _channels(channels)
+        self._validate_adc_channels(requested)
+        sample_count = MAX_ADC_SAMPLES - MAX_ADC_SAMPLES % len(requested)
         values = self._client.call(LCARD_READ_ADC_FRAME, [
             TypedValue(DataType.UINT64, self._handle), *arguments,
             TypedValue(DataType.FLOAT64, _rate(rate_khz, "rate_khz")),
+            TypedValue(DataType.UINT32, sample_count),
         ], timeout=timeout)
         if len(values) != 2 or not isinstance(values[1], float):
             raise RuntimeError("LCard ADC frame returned invalid data")
         raw_codes = values[0]
         if (len(requested) == 1 and isinstance(raw_codes, int)
                 and not isinstance(raw_codes, bool)):
-            codes = [raw_codes]
+            flat_codes = [raw_codes]
         elif isinstance(raw_codes, list):
-            codes = raw_codes
+            flat_codes = raw_codes
         else:
             raise RuntimeError("LCard ADC frame returned invalid data")
-        if (len(codes) != len(requested)
-                or any(not isinstance(code, int) or isinstance(code, bool) for code in codes)):
+        if (not flat_codes or len(flat_codes) > sample_count
+                or len(flat_codes) % len(requested) != 0
+                or any(not isinstance(code, int) or isinstance(code, bool) for code in flat_codes)):
             raise RuntimeError("LCard ADC frame returned invalid data")
+        width = len(requested)
+        codes = [flat_codes[offset:offset + width]
+                 for offset in range(0, len(flat_codes), width)]
         return LcardAdcFrame(codes, values[1])
 
     def read_adc_voltage_frame(
@@ -217,7 +272,9 @@ class LcardDevice:
             raise ValueError("raw ADC channels do not specify a voltage range")
         frame = self.read_adc_frame(requested, rate_khz=rate_khz, timeout=timeout)
         return LcardAdcVoltageFrame(
-            [_code_to_volts(code, channel) for code, channel in zip(frame.codes, requested)],
+            [[_code_to_volts(code, channel)
+              for code, channel in zip(row, requested)]
+             for row in frame.codes],
             frame.actual_rate_khz,
         )
 
@@ -263,6 +320,20 @@ class LcardDevice:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("LCard device is closed")
+
+    def _validate_adc_channels(self, channels: Sequence[LcardAdcChannel]) -> None:
+        if self._info.board_type not in (30, 31):
+            return
+        for channel in channels:
+            if channel.is_raw:
+                continue
+            maximum = (31 if channel.mode == LcardAdcInputMode.COMMON_GROUND
+                       else 15)
+            if channel.channel > maximum:
+                mode = channel.mode.name.lower().replace("_", "-")
+                raise ValueError(
+                    f"E14-140/E14-440 {mode} channel must be between 0 and {maximum}"
+                )
 
     def __enter__(self) -> LcardDevice:
         return self
