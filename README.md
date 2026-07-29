@@ -412,6 +412,8 @@ the server; callers should continue to pass physical channel numbers.
 | `read_adc_voltage(channel, *, timeout=5000)` | one ADC sample converted to volts |
 | `read_adc_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcFrame(codes[time][channel], actual_rate_khz)` |
 | `read_adc_voltage_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcVoltageFrame(voltages[time][channel], actual_rate_khz)` |
+| `read_adc_samples(channels, samples_per_channel, rate_khz=100, *, timeout=5000)` | Exact-size `LcardAdcFrame` |
+| `read_adc_voltage_samples(channels, samples_per_channel, rate_khz=100, *, timeout=5000)` | Exact-size `LcardAdcVoltageFrame` |
 | `write_dac(channel, code, *, timeout=5000)` | writes one uint16 code to DAC 0 or 1 |
 | `write_dac_frames(dac0, dac1, frame_rate_khz, *, timeout=5000)` | `LcardDacWriteResult(frames_written, actual_rate_khz)` |
 | `close(*, timeout=5000)` | stops streams and releases the device |
@@ -420,8 +422,13 @@ ADC frames accept 1..128 channels and fill the 131,072-sample ADC buffer with
 complete channel scans. For channel counts that do not divide 131,072, the
 incomplete final scan is not requested. Timed DAC arrays must be equal-length,
 contain 1..262,144 uint16 codes each, and describe simultaneous DAC0/DAC1
-frames. Capability flags are `READ_ADC`, `READ_ADC_FRAME`, `WRITE_DAC`, and
-`WRITE_DAC_FRAMES`; not every board supports every operation.
+frames. Capability flags are `READ_ADC`, `READ_ADC_FRAME`, `READ_ADC_SAMPLES`,
+`WRITE_DAC`, and `WRITE_DAC_FRAMES`; not every board supports every operation.
+
+`read_adc_samples` and `read_adc_voltage_samples` instead accept an exact
+`samples_per_channel` count. The server sizes the continuous acquisition and
+normalizes board-specific stream parameters; the server response-arena size
+sets the practical upper bound for one RPC result.
 
 The returned matrices use time rows and channel columns. `sample_count` is the
 total number of values, `samples_per_channel` is the number of time rows, and
@@ -450,6 +457,11 @@ with NrpcClient("127.0.0.1", 9000) as client:
             [channel], rate_khz=100.0, timeout=1000
         )
         print(frame.codes[0], frame.samples_per_channel, frame.actual_rate_khz)
+        exact = device.read_adc_samples(
+            [channel], samples_per_channel=10_000,
+            rate_khz=100.0, timeout=5000,
+        )
+        print(len(exact.codes))
 ```
 
 ## Errors

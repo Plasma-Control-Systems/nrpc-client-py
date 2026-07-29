@@ -105,6 +105,7 @@ _FUNCTION_NAMES = {
     83: "write LCard DAC code",
     84: "write LCard DAC frames",
     85: "close LCard device",
+    86: "read exact LCard ADC samples",
 }
 
 _ERROR_DESCRIPTIONS = {

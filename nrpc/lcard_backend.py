@@ -16,6 +16,7 @@ LCARD_READ_ADC_FRAME = 82
 LCARD_WRITE_DAC = 83
 LCARD_WRITE_DAC_FRAMES = 84
 LCARD_CLOSE = 85
+LCARD_READ_ADC_SAMPLES = 86
 
 MAX_ADC_CHANNELS = 128
 MAX_ADC_SAMPLES = 131072
@@ -28,6 +29,7 @@ class LcardCapability(IntFlag):
     READ_ADC_FRAME = 1 << 1
     WRITE_DAC = 1 << 2
     WRITE_DAC_FRAMES = 1 << 3
+    READ_ADC_SAMPLES = 1 << 4
 
 
 class LcardAdcInputMode(IntEnum):
@@ -271,6 +273,73 @@ class LcardDevice:
         if any(channel.is_raw for channel in requested):
             raise ValueError("raw ADC channels do not specify a voltage range")
         frame = self.read_adc_frame(requested, rate_khz=rate_khz, timeout=timeout)
+        return LcardAdcVoltageFrame(
+            [[_code_to_volts(code, channel)
+              for code, channel in zip(row, requested)]
+             for row in frame.codes],
+            frame.actual_rate_khz,
+        )
+
+    def read_adc_samples(
+        self,
+        channels: Sequence[LcardAdcChannel] | Iterable[LcardAdcChannel],
+        samples_per_channel: int,
+        rate_khz: float = 100.0,
+        *,
+        timeout: int = 5000,
+    ) -> LcardAdcFrame:
+        """Acquire exactly the requested number of samples for every channel."""
+        self._ensure_open()
+        requested, arguments = _channels(channels)
+        self._validate_adc_channels(requested)
+        if (not isinstance(samples_per_channel, int)
+                or isinstance(samples_per_channel, bool)
+                or not 1 <= samples_per_channel <= 0xFFFFFFFF):
+            raise ValueError("samples_per_channel must be a positive uint32 integer")
+        if samples_per_channel * len(requested) > 0xFFFFFFFF:
+            raise ValueError("total ADC sample count must fit in uint32")
+        values = self._client.call(LCARD_READ_ADC_SAMPLES, [
+            TypedValue(DataType.UINT64, self._handle), *arguments,
+            TypedValue(DataType.UINT32, samples_per_channel),
+            TypedValue(DataType.FLOAT64, _rate(rate_khz, "rate_khz")),
+        ], timeout=timeout)
+        if len(values) != 2 or not isinstance(values[1], float):
+            raise RuntimeError("LCard ADC samples read returned invalid data")
+        raw_codes = values[0]
+        if (samples_per_channel == 1 and len(requested) == 1
+                and isinstance(raw_codes, int) and not isinstance(raw_codes, bool)):
+            flat_codes = [raw_codes]
+        elif isinstance(raw_codes, list):
+            flat_codes = raw_codes
+        else:
+            raise RuntimeError("LCard ADC samples read returned invalid data")
+        expected = samples_per_channel * len(requested)
+        if (len(flat_codes) != expected or
+                any(not isinstance(code, int) or isinstance(code, bool)
+                    for code in flat_codes)):
+            raise RuntimeError("LCard ADC samples read returned invalid data")
+        width = len(requested)
+        return LcardAdcFrame(
+            [flat_codes[offset:offset + width]
+             for offset in range(0, expected, width)],
+            values[1],
+        )
+
+    def read_adc_voltage_samples(
+        self,
+        channels: Sequence[LcardAdcChannel] | Iterable[LcardAdcChannel],
+        samples_per_channel: int,
+        rate_khz: float = 100.0,
+        *,
+        timeout: int = 5000,
+    ) -> LcardAdcVoltageFrame:
+        """Acquire an exact sample count and convert normalized codes to volts."""
+        requested = list(channels)
+        _channels(requested)
+        if any(channel.is_raw for channel in requested):
+            raise ValueError("raw ADC channels do not specify a voltage range")
+        frame = self.read_adc_samples(
+            requested, samples_per_channel, rate_khz=rate_khz, timeout=timeout)
         return LcardAdcVoltageFrame(
             [[_code_to_volts(code, channel)
               for code, channel in zip(row, requested)]

@@ -6,7 +6,7 @@ from nrpc import (
 )
 from nrpc.lcard_backend import (
     LCARD_CLOSE, LCARD_OPEN, LCARD_READ_ADC, LCARD_READ_ADC_FRAME,
-    LCARD_WRITE_DAC, LCARD_WRITE_DAC_FRAMES,
+    LCARD_READ_ADC_SAMPLES, LCARD_WRITE_DAC, LCARD_WRITE_DAC_FRAMES,
 )
 
 
@@ -22,6 +22,8 @@ class FakeClient:
         if function == LCARD_READ_ADC:
             return [-123]
         if function == LCARD_READ_ADC_FRAME:
+            return self.adc_frame_result
+        if function == LCARD_READ_ADC_SAMPLES:
             return self.adc_frame_result
         if function == LCARD_WRITE_DAC:
             return []
@@ -85,6 +87,37 @@ class LcardBackendTests(unittest.TestCase):
         self.assertEqual(
             client.calls[-1][1][-1], TypedValue(DataType.UINT32, 131070)
         )
+
+    def test_reads_exact_sample_count_per_channel(self):
+        client = FakeClient()
+        client.adc_frame_result = [[1, 2, 3, 4, 5, 6], 48.0]
+        device = LcardDevice.open(client, 0)
+
+        frame = device.read_adc_samples(
+            [LcardAdcChannel(0), LcardAdcChannel(1)],
+            3,
+            rate_khz=50.0,
+            timeout=250,
+        )
+
+        self.assertEqual(frame.codes, [[1, 2], [3, 4], [5, 6]])
+        function, arguments, timeout = client.calls[-1]
+        self.assertEqual(function, LCARD_READ_ADC_SAMPLES)
+        self.assertEqual(arguments[-2], TypedValue(DataType.UINT32, 3))
+        self.assertEqual(arguments[-1], TypedValue(DataType.FLOAT64, 50.0))
+        self.assertEqual(timeout, 250)
+
+    def test_exact_sample_count_validation(self):
+        client = FakeClient()
+        device = LcardDevice.open(client, 0)
+        call_count = len(client.calls)
+
+        with self.assertRaises(ValueError):
+            device.read_adc_samples([LcardAdcChannel(0)], 0)
+        with self.assertRaises(ValueError):
+            device.read_adc_samples(
+                [LcardAdcChannel(0), LcardAdcChannel(1)], 0xFFFFFFFF)
+        self.assertEqual(len(client.calls), call_count)
 
     def test_adc_codes_are_converted_to_volts(self):
         client = FakeClient()
