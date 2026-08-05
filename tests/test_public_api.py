@@ -5,7 +5,7 @@ import nrpc
 
 class PublicApiTests(unittest.TestCase):
     def test_version_and_typed_exports(self):
-        self.assertEqual(nrpc.__version__, "0.1.0")
+        self.assertEqual(nrpc.__version__, "1.0.0")
         self.assertNotIn("AsyncNrpcClient", nrpc.__all__)
         self.assertFalse(any(name.startswith("Async") for name in nrpc.__all__))
         self.assertIn("NrpcValue", nrpc.__all__)

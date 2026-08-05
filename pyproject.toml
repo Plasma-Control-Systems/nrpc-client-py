@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nrpc-client"
-version = "0.1.0"
+version = "1.0.0"
 description = "Typed synchronous Python client for nRPC"
 readme = "README.md"
 requires-python = ">=3.10"
