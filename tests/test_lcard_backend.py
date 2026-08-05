@@ -1,7 +1,8 @@
 import unittest
 
 from nrpc import (
-    DataType, LcardAdcChannel, LcardAdcInputMode, LcardCapability,
+    DataType, LcardAdcChannel, LcardAdcInputMode, LcardAdcTrigger,
+    LcardAdcTriggerMode, LcardCapability,
     LcardAdcVoltageFrame, LcardDevice, LcardDeviceInfo, TypedValue,
 )
 from nrpc.lcard_backend import (
@@ -106,6 +107,31 @@ class LcardBackendTests(unittest.TestCase):
         self.assertEqual(arguments[-2], TypedValue(DataType.UINT32, 3))
         self.assertEqual(arguments[-1], TypedValue(DataType.FLOAT64, 50.0))
         self.assertEqual(timeout, 250)
+
+    def test_hardware_trigger_is_serialized_with_exact_sample_read(self):
+        client = FakeClient()
+        client.adc_frame_result = [[1], 48.0]
+        device = LcardDevice.open(client, 0)
+        trigger = LcardAdcTrigger(
+            LcardAdcTriggerMode.ANALOG_FALLING,
+            LcardAdcChannel(2, range=2.5),
+            -1200,
+        )
+
+        device.read_adc_samples(
+            [LcardAdcChannel(0)], 1, trigger=trigger, timeout=250)
+
+        arguments = client.calls[-1][1]
+        self.assertEqual(arguments[7], TypedValue(DataType.UINT8, 4))
+        self.assertEqual(arguments[9], TypedValue(DataType.UINT32, [2]))
+        self.assertEqual(arguments[10], TypedValue(DataType.FLOAT64, [2.5]))
+        self.assertEqual(arguments[12], TypedValue(DataType.INT16, -1200))
+
+    def test_hardware_trigger_validation(self):
+        with self.assertRaises(ValueError):
+            LcardAdcTrigger(threshold=0x8000)
+        with self.assertRaises(ValueError):
+            LcardAdcTrigger(channel=object())
 
     def test_exact_sample_count_validation(self):
         client = FakeClient()

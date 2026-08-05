@@ -412,8 +412,8 @@ the server; callers should continue to pass physical channel numbers.
 | `read_adc_voltage(channel, *, timeout=5000)` | one ADC sample converted to volts |
 | `read_adc_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcFrame(codes[time][channel], actual_rate_khz)` |
 | `read_adc_voltage_frame(channels, rate_khz=100, *, timeout=5000)` | `LcardAdcVoltageFrame(voltages[time][channel], actual_rate_khz)` |
-| `read_adc_samples(channels, samples_per_channel, rate_khz=100, *, timeout=5000)` | Exact-size `LcardAdcFrame` |
-| `read_adc_voltage_samples(channels, samples_per_channel, rate_khz=100, *, timeout=5000)` | Exact-size `LcardAdcVoltageFrame` |
+| `read_adc_samples(channels, samples_per_channel, rate_khz=100, *, trigger=None, timeout=5000)` | Exact-size `LcardAdcFrame` |
+| `read_adc_voltage_samples(channels, samples_per_channel, rate_khz=100, *, trigger=None, timeout=5000)` | Exact-size `LcardAdcVoltageFrame` |
 | `write_dac(channel, code, *, timeout=5000)` | writes one uint16 code to DAC 0 or 1 |
 | `write_dac_frames(dac0, dac1, frame_rate_khz, *, timeout=5000)` | `LcardDacWriteResult(frames_written, actual_rate_khz)` |
 | `close(*, timeout=5000)` | stops streams and releases the device |
@@ -430,6 +430,14 @@ frames. Capability flags are `READ_ADC`, `READ_ADC_FRAME`, `READ_ADC_SAMPLES`,
 normalizes board-specific stream parameters; the server response-arena size
 sets the practical upper bound for one RPC result.
 
+Pass `LcardAdcTrigger(mode, channel, threshold)` to arm a hardware start
+condition. Modes are disabled, external rising/falling, and analog
+rising/falling/above/below. `threshold` is a normalized signed ADC code; for a
+voltage level use `round(volts * 8000 / channel.range)`. E14 boards support a
+fixed-edge external start and analog modes, E20-10 supports external edges,
+and E20-10B additionally supports analog modes. A missing trigger is serialized
+in the legacy seven-argument form for compatibility with older servers.
+
 The returned matrices use time rows and channel columns. `sample_count` is the
 total number of values, `samples_per_channel` is the number of time rows, and
 `channel_count` is the row width. `time_step_seconds` uses the actual ADC point
@@ -443,7 +451,9 @@ correction. Voltage methods reject `LcardAdcChannel.raw(...)`, because a raw
 logical-channel code does not carry an unambiguous full-scale range.
 
 ```python
-from nrpc import LcardAdcChannel, NrpcClient
+from nrpc import (
+    LcardAdcChannel, LcardAdcTrigger, LcardAdcTriggerMode, NrpcClient,
+)
 
 with NrpcClient("127.0.0.1", 9000) as client:
     with client.open_lcard(
@@ -459,7 +469,11 @@ with NrpcClient("127.0.0.1", 9000) as client:
         print(frame.codes[0], frame.samples_per_channel, frame.actual_rate_khz)
         exact = device.read_adc_samples(
             [channel], samples_per_channel=10_000,
-            rate_khz=100.0, timeout=5000,
+            rate_khz=100.0,
+            trigger=LcardAdcTrigger(
+                LcardAdcTriggerMode.ANALOG_RISING, channel, 800,
+            ),
+            timeout=5000,
         )
         print(len(exact.codes))
 ```

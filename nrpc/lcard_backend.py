@@ -30,12 +30,23 @@ class LcardCapability(IntFlag):
     WRITE_DAC = 1 << 2
     WRITE_DAC_FRAMES = 1 << 3
     READ_ADC_SAMPLES = 1 << 4
+    HARDWARE_TRIGGER = 1 << 5
 
 
 class LcardAdcInputMode(IntEnum):
     DIFFERENTIAL = 0
     COMMON_GROUND = 1
     ZERO = 2
+
+
+class LcardAdcTriggerMode(IntEnum):
+    DISABLED = 0
+    EXTERNAL_RISING = 1
+    EXTERNAL_FALLING = 2
+    ANALOG_RISING = 3
+    ANALOG_FALLING = 4
+    ANALOG_ABOVE = 5
+    ANALOG_BELOW = 6
 
 
 @dataclass(frozen=True)
@@ -62,6 +73,27 @@ class LcardAdcChannel:
     @classmethod
     def raw(cls, logical_code: int) -> LcardAdcChannel:
         return cls(logical_code, range=1.0, is_raw=True)
+
+
+@dataclass(frozen=True)
+class LcardAdcTrigger:
+    """Hardware ADC start condition; threshold is a normalized int16 code."""
+
+    mode: LcardAdcTriggerMode = LcardAdcTriggerMode.DISABLED
+    channel: LcardAdcChannel = LcardAdcChannel(0)
+    threshold: int = 0
+
+    def __post_init__(self) -> None:
+        try:
+            mode = LcardAdcTriggerMode(self.mode)
+        except ValueError as error:
+            raise ValueError("invalid ADC trigger mode") from error
+        if not isinstance(self.channel, LcardAdcChannel):
+            raise ValueError("trigger channel must be an LcardAdcChannel value")
+        if (not isinstance(self.threshold, int) or isinstance(self.threshold, bool)
+                or not -0x8000 <= self.threshold <= 0x7FFF):
+            raise ValueError("trigger threshold must be an int16 integer")
+        object.__setattr__(self, "mode", mode)
 
 
 @dataclass(frozen=True)
@@ -286,6 +318,7 @@ class LcardDevice:
         samples_per_channel: int,
         rate_khz: float = 100.0,
         *,
+        trigger: LcardAdcTrigger | None = None,
         timeout: int = 5000,
     ) -> LcardAdcFrame:
         """Acquire exactly the requested number of samples for every channel."""
@@ -298,11 +331,22 @@ class LcardDevice:
             raise ValueError("samples_per_channel must be a positive uint32 integer")
         if samples_per_channel * len(requested) > 0xFFFFFFFF:
             raise ValueError("total ADC sample count must fit in uint32")
-        values = self._client.call(LCARD_READ_ADC_SAMPLES, [
+        call_arguments = [
             TypedValue(DataType.UINT64, self._handle), *arguments,
             TypedValue(DataType.UINT32, samples_per_channel),
             TypedValue(DataType.FLOAT64, _rate(rate_khz, "rate_khz")),
-        ], timeout=timeout)
+        ]
+        if trigger is not None:
+            if not isinstance(trigger, LcardAdcTrigger):
+                raise ValueError("trigger must be an LcardAdcTrigger value or None")
+            _, trigger_channel = _channels([trigger.channel])
+            call_arguments.extend([
+                TypedValue(DataType.UINT8, trigger.mode.value),
+                *trigger_channel,
+                TypedValue(DataType.INT16, trigger.threshold),
+            ])
+        values = self._client.call(
+            LCARD_READ_ADC_SAMPLES, call_arguments, timeout=timeout)
         if len(values) != 2 or not isinstance(values[1], float):
             raise RuntimeError("LCard ADC samples read returned invalid data")
         raw_codes = values[0]
@@ -331,6 +375,7 @@ class LcardDevice:
         samples_per_channel: int,
         rate_khz: float = 100.0,
         *,
+        trigger: LcardAdcTrigger | None = None,
         timeout: int = 5000,
     ) -> LcardAdcVoltageFrame:
         """Acquire an exact sample count and convert normalized codes to volts."""
@@ -339,7 +384,8 @@ class LcardDevice:
         if any(channel.is_raw for channel in requested):
             raise ValueError("raw ADC channels do not specify a voltage range")
         frame = self.read_adc_samples(
-            requested, samples_per_channel, rate_khz=rate_khz, timeout=timeout)
+            requested, samples_per_channel, rate_khz=rate_khz,
+            trigger=trigger, timeout=timeout)
         return LcardAdcVoltageFrame(
             [[_code_to_volts(code, channel)
               for code, channel in zip(row, requested)]

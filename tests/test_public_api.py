@@ -14,6 +14,8 @@ class PublicApiTests(unittest.TestCase):
         self.assertIn("LcardDevice", nrpc.__all__)
         self.assertIn("LcardAdcChannel", nrpc.__all__)
         self.assertIn("LcardAdcVoltageFrame", nrpc.__all__)
+        self.assertIn("LcardAdcTrigger", nrpc.__all__)
+        self.assertIn("LcardAdcTriggerMode", nrpc.__all__)
         self.assertFalse(hasattr(nrpc, "AsyncNrpcClient"))
 
 
