@@ -44,6 +44,7 @@ from .protocols import (
     ProtocolTransaction,
     ProtocolTransportError,
 )
+from .gpio_backend import GpioDirection, GpioLine
 
 __version__ = "1.0.0"
 
@@ -51,6 +52,8 @@ __all__ = [
     "__version__",
     "ByteTransport",
     "DataType",
+    "GpioDirection",
+    "GpioLine",
     "NrpcClient",
     "NrpcError",
     "NrpcValue",

@@ -101,6 +101,27 @@ python examples/modbus_rtu.py \
 The RTU example uses 8 data bits, even parity, and one stop bit. Adjust the
 example if the slave uses a different serial configuration.
 
+## GPIO
+
+Read an input line on the Linux server:
+
+```sh
+python examples/gpio_control.py --chip /dev/gpiochip0 --offset 17
+```
+
+Request an output and set its logical value:
+
+```sh
+python examples/gpio_control.py \
+  --chip /dev/gpiochip0 \
+  --offset 17 \
+  --output \
+  --value 1
+```
+
+Use `gpioinfo` on the server to find the correct offset. Physical header pin
+numbers are board-specific and are not accepted directly.
+
 ## NI-DAQmx Voltage Input
 
 On the Windows machine hosting the nRPC server, install the NI-DAQmx runtime

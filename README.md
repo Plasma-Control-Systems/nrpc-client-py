@@ -3,7 +3,7 @@
 `nrpc-client` is the typed, synchronous Python client for nRPC 0.1.0. It is
 dependency-free, supports Python 3.10 or newer, and runs on Linux, macOS, and
 Windows. The client can make arbitrary typed RPC calls and provides high-level
-proxies for the server's TCP, serial, NI-DAQmx, and LCard backends.
+proxies for the server's TCP, serial, GPIO, NI-DAQmx, and LCard backends.
 
 The distribution is named `nrpc-client`; the import package is `nrpc`. The
 authoritative wire definition is [SPEC.md](SPEC.md).
@@ -14,7 +14,7 @@ authoritative wire definition is [SPEC.md](SPEC.md).
 - strict nRPC request encoding and response validation
 - all nRPC scalar types plus explicitly typed numeric and boolean arrays
 - connection-safe serialization of calls from multiple Python threads
-- context-managed TCP and serial equipment connections
+- context-managed TCP, serial, and GPIO resources
 - reusable transaction infrastructure for binary device protocols
 - Modbus TCP and Modbus RTU clients
 - typed NI-DAQmx task and LCard device proxies
@@ -405,6 +405,46 @@ The adapters do not close a separately managed TCP/serial proxy by default.
 Pass `owns_transport=True` only when the adapter is solely responsible for that
 proxy. One adapter must not share its transport with unrelated protocol code.
 
+## GPIO backend
+
+`GpioLine` controls one GPIO line on a Linux nRPC server through libgpiod.
+Address lines by GPIO chip path and offset, not by the physical header pin
+number. Use `gpioinfo` on the server to inspect the mapping for a particular
+Raspberry Pi, Orange Pi, or device-tree configuration.
+
+```python
+client.open_gpio_line(
+    chip: str,
+    offset: int,
+    direction: GpioDirection = GpioDirection.INPUT,
+    *,
+    initial_value: bool = False,
+    active_low: bool = False,
+    consumer: str = "nrpc-server",
+    timeout: int = 5000,
+) -> GpioLine
+```
+
+The proxy provides `handle`, `direction`, `read`, `write`, and idempotent
+`close`. Output initial state is applied as part of the exclusive line request,
+avoiding a separate configuration-to-write transition. Values are logical;
+`active_low=True` inverts their mapping to the physical level.
+
+```python
+from nrpc import GpioDirection, NrpcClient
+
+with NrpcClient("192.0.2.30", 9000) as client:
+    with client.open_gpio_line(
+        "/dev/gpiochip0", 17, GpioDirection.OUTPUT,
+        initial_value=False, consumer="status-led",
+    ) as line:
+        line.write(True)
+        print(line.read())
+```
+
+The server must be built with libgpiod support and have permission to access
+the relevant `/dev/gpiochip*` device.
+
 ## NI-DAQmx backend
 
 NI-DAQmx tasks run inside the Windows server process; the Python client remains
@@ -618,7 +658,7 @@ except OSError as error:
 ```
 
 Server-reserved errors use codes `1001..1004`; TCP uses `2001..2007`, serial
-`3001..3008`, NI-DAQmx `5001..5006`, and LCard `6001..6007`. Refer to the server
+`3001..3008`, GPIO `4001..4007`, NI-DAQmx `5001..5006`, and LCard `6001..6007`. Refer to the server
 README for the complete meanings and native runtime requirements.
 
 ## Architecture and wire behavior
@@ -659,7 +699,7 @@ python examples/nidaqmx_voltage_input.py --channel Dev1/ai0 --samples 10
 python examples/lcard_raw_adc.py --slot 0 --channel 0
 ```
 
-TCP, serial, NI-DAQmx, and LCard examples require the matching server-side
+TCP, serial, GPIO, NI-DAQmx, and LCard examples require the matching server-side
 equipment and runtime. The basic echo example only requires the sample server.
 
 ## Development and testing

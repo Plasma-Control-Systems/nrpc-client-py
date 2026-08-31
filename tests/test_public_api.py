@@ -11,6 +11,8 @@ class PublicApiTests(unittest.TestCase):
         self.assertIn("NrpcValue", nrpc.__all__)
         self.assertIn("SerialBackend", nrpc.__all__)
         self.assertIn("TcpBackend", nrpc.__all__)
+        self.assertIn("GpioLine", nrpc.__all__)
+        self.assertIn("GpioDirection", nrpc.__all__)
         self.assertIn("ByteTransport", nrpc.__all__)
         self.assertIn("ProtocolSession", nrpc.__all__)
         self.assertIn("ModbusTcpClient", nrpc.__all__)

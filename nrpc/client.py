@@ -9,6 +9,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypeAlias
 
 if TYPE_CHECKING:
+    from .gpio_backend import GpioDirection, GpioLine
     from .lcard_backend import LcardDevice
     from .nidaqmx_backend import (
         NidaqmxCjcSource,
@@ -88,6 +89,10 @@ _FUNCTION_NAMES = {
     33: "write to serial port",
     34: "read from serial port",
     35: "close serial port",
+    48: "open GPIO line",
+    49: "read GPIO line",
+    50: "write GPIO line",
+    51: "close GPIO line",
     64: "create NI-DAQmx analog voltage input task",
     65: "create NI-DAQmx thermocouple input task",
     66: "create NI-DAQmx analog voltage output task",
@@ -131,6 +136,13 @@ _ERROR_DESCRIPTIONS = {
     3006: "serial port read failed",
     3007: "serial port operation timed out",
     3008: "unsupported serial port operation",
+    4001: "invalid GPIO arguments",
+    4002: "libgpiod is unavailable",
+    4003: "GPIO chip open failed",
+    4004: "GPIO line request failed",
+    4005: "unknown GPIO line handle",
+    4006: "GPIO read failed",
+    4007: "GPIO write failed",
     5001: "invalid NI-DAQmx arguments",
     5002: "NI-DAQmx library could not be loaded",
     5003: "NI-DAQmx task creation failed",
@@ -434,6 +446,32 @@ class NrpcClient:
         from .tcp_backend import TcpBackend
 
         return TcpBackend(self, host, port, timeout=timeout)
+
+    def open_gpio_line(
+        self,
+        chip: str,
+        offset: int,
+        direction: "GpioDirection | None" = None,
+        *,
+        initial_value: bool = False,
+        active_low: bool = False,
+        consumer: str = "nrpc-server",
+        timeout: int = 5000,
+    ) -> "GpioLine":
+        """Request a server-side GPIO line through libgpiod."""
+
+        from .gpio_backend import GpioDirection, GpioLine
+
+        return GpioLine(
+            self,
+            chip,
+            offset,
+            GpioDirection.INPUT if direction is None else direction,
+            initial_value=initial_value,
+            active_low=active_low,
+            consumer=consumer,
+            timeout=timeout,
+        )
 
     def open_lcard(
         self, slot: int, firmware_path: str | None = None, *, timeout: int = 5000

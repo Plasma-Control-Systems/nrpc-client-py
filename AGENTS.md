@@ -20,6 +20,7 @@ Backend modules are thin typed proxies over numeric RPC functions:
 | --- | --- | --- |
 | `tcp_backend.py` | `TcpBackend` | `16..19` open/write/read/close |
 | `serial_backend.py` | `SerialBackend` | `32..35` open/write/read/close |
+| `gpio_backend.py` | `GpioLine` | `48..51` open/read/write/close |
 | `nidaqmx_backend.py` | `NidaqmxTask` | `64..74` task creation and I/O |
 | `lcard_backend.py` | `LcardDevice` | `80..85` device/ADC/DAC operations |
 
@@ -42,6 +43,7 @@ Only symbols exported by `nrpc.__all__` are public:
 - Core: `NrpcClient`, `DataType`, `TypedValue`, `NrpcValue`, `NrpcError`, `ProtocolError`, `RemoteError`, `__version__`.
 - Protocols: `ByteTransport`, `ProtocolSession`, `ProtocolTransaction`, `ProtocolTransportError`, `ModbusTcpClient`, `ModbusRtuClient`, `ModbusError`, `ModbusProtocolError`, `ModbusException`.
 - TCP/serial: `TcpBackend`, `SerialBackend`, `SerialParity`, `SerialFlowControl`.
+- GPIO: `GpioLine`, `GpioDirection`.
 - NI-DAQmx: `NidaqmxTask`, `NidaqmxChannelType`, `NidaqmxTerminalConfig`, `NidaqmxThermocoupleType`, `NidaqmxCjcSource`.
 - LCard: `LcardDevice`, `LcardDeviceInfo`, `LcardCapability`, `LcardAdcChannel`, `LcardAdcInputMode`, `LcardAdcFrame`, `LcardDacWriteResult`.
 
@@ -62,6 +64,7 @@ Preferred factories and proxy methods:
 | --- | --- |
 | `open_tcp_backend(host, port, timeout=5000)` | `write`, `read`, `read_until`, `close` |
 | `open_serial_backend(port, baud_rate=9600, data_bits=8, parity=NONE, stop_bits=1, flow_control=NONE, timeout=5000)` | `write`, `read`, `read_until`, `close` |
+| `open_gpio_line(chip, offset, direction=INPUT, initial_value=False, active_low=False, consumer="nrpc-server", timeout=5000)` | `read`, `write`, `close` |
 | `create_nidaqmx_ai_voltage(...)`, `create_nidaqmx_ai_thermocouple(...)`, `create_nidaqmx_ao_voltage(...)`, `create_nidaqmx_digital_input(...)`, `create_nidaqmx_digital_output(...)` | `start`, typed `read`/`write`, `close` |
 | `open_lcard(slot, firmware_path=None, timeout=5000)` | `info`, `read_adc`, `read_adc_frame`, `write_dac`, `write_dac_frames`, `close` |
 
@@ -169,7 +172,7 @@ with NrpcClient("127.0.0.1", 9000) as client:
 
 Use `LcardAdcChannel.raw(logical_code)` only for an existing vendor logical-channel code. ADC frames allow 1..128 channels. Finite DAC output requires equal-length DAC0/DAC1 uint16 arrays and reports actual normalized rate.
 
-Complete CLI programs are in `examples/basic_rpc.py`, `tls_rpc.py`, `tcp_scpi.py`, `serial_scpi.py`, `nidaqmx_voltage_input.py`, and `lcard_raw_adc.py`.
+Complete CLI programs are in `examples/basic_rpc.py`, `tls_rpc.py`, `tcp_scpi.py`, `serial_scpi.py`, `gpio_control.py`, `nidaqmx_voltage_input.py`, and `lcard_raw_adc.py`.
 
 ## Development and tests
 
