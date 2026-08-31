@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         SerialFlowControl,
         SerialParity,
     )
+    from .spi_backend import SpiDevice, SpiMode
     from .tcp_backend import TcpBackend
 
 MAGIC = 0xF0
@@ -93,6 +94,9 @@ _FUNCTION_NAMES = {
     49: "read GPIO line",
     50: "write GPIO line",
     51: "close GPIO line",
+    52: "open SPI device",
+    53: "transfer SPI data",
+    54: "close SPI device",
     64: "create NI-DAQmx analog voltage input task",
     65: "create NI-DAQmx thermocouple input task",
     66: "create NI-DAQmx analog voltage output task",
@@ -143,6 +147,12 @@ _ERROR_DESCRIPTIONS = {
     4005: "unknown GPIO line handle",
     4006: "GPIO read failed",
     4007: "GPIO write failed",
+    4501: "invalid SPI arguments",
+    4502: "Linux spidev support is unavailable",
+    4503: "SPI device open failed",
+    4504: "SPI device configuration failed",
+    4505: "unknown SPI device handle",
+    4506: "SPI transfer failed",
     5001: "invalid NI-DAQmx arguments",
     5002: "NI-DAQmx library could not be loaded",
     5003: "NI-DAQmx task creation failed",
@@ -470,6 +480,30 @@ class NrpcClient:
             initial_value=initial_value,
             active_low=active_low,
             consumer=consumer,
+            timeout=timeout,
+        )
+
+    def open_spi_device(
+        self,
+        device: str,
+        *,
+        mode: "SpiMode | None" = None,
+        max_speed_hz: int = 1_000_000,
+        bits_per_word: int = 8,
+        lsb_first: bool = False,
+        timeout: int = 5000,
+    ) -> "SpiDevice":
+        """Open a Linux spidev device and return its client proxy."""
+
+        from .spi_backend import SpiDevice, SpiMode
+
+        return SpiDevice(
+            self,
+            device,
+            mode=SpiMode.MODE_0 if mode is None else mode,
+            max_speed_hz=max_speed_hz,
+            bits_per_word=bits_per_word,
+            lsb_first=lsb_first,
             timeout=timeout,
         )
 

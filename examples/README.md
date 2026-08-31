@@ -122,6 +122,17 @@ python examples/gpio_control.py \
 Use `gpioinfo` on the server to find the correct offset. Physical header pin
 numbers are board-specific and are not accepted directly.
 
+## SPI
+
+Read the JEDEC identifier of an SPI flash attached to the Linux server:
+
+```sh
+python examples/spi_flash_id.py --device /dev/spidev0.0 --speed 1000000
+```
+
+The server must expose the controller as a spidev device and have read/write
+permission for it. The example sends command `0x9f` in SPI mode 0.
+
 ## NI-DAQmx Voltage Input
 
 On the Windows machine hosting the nRPC server, install the NI-DAQmx runtime

@@ -3,7 +3,7 @@
 `nrpc-client` is the typed, synchronous Python client for nRPC 0.1.0. It is
 dependency-free, supports Python 3.10 or newer, and runs on Linux, macOS, and
 Windows. The client can make arbitrary typed RPC calls and provides high-level
-proxies for the server's TCP, serial, GPIO, NI-DAQmx, and LCard backends.
+proxies for the server's TCP, serial, GPIO, SPI, NI-DAQmx, and LCard backends.
 
 The distribution is named `nrpc-client`; the import package is `nrpc`. The
 authoritative wire definition is [SPEC.md](SPEC.md).
@@ -14,7 +14,7 @@ authoritative wire definition is [SPEC.md](SPEC.md).
 - strict nRPC request encoding and response validation
 - all nRPC scalar types plus explicitly typed numeric and boolean arrays
 - connection-safe serialization of calls from multiple Python threads
-- context-managed TCP, serial, and GPIO resources
+- context-managed TCP, serial, GPIO, and SPI resources
 - reusable transaction infrastructure for binary device protocols
 - Modbus TCP and Modbus RTU clients
 - typed NI-DAQmx task and LCard device proxies
@@ -91,7 +91,8 @@ multiple threads through the same client are serialized with a lock; use
 multiple client instances when RPCs must execute concurrently.
 
 The client is a context manager. Closing the connection also tells the server
-to clean up every TCP socket, serial port, NI-DAQmx task, and LCard device owned
+to clean up every TCP socket, serial port, GPIO line, SPI device, NI-DAQmx task,
+and LCard device owned
 by that connection. Backend proxies are context managers as well, which closes
 resources earlier and makes failures easier to localize.
 
@@ -445,6 +446,41 @@ with NrpcClient("192.0.2.30", 9000) as client:
 The server must be built with libgpiod support and have permission to access
 the relevant `/dev/gpiochip*` device.
 
+## SPI backend
+
+`SpiDevice` controls a Linux spidev device hosted by the nRPC server. The
+client itself remains platform-independent.
+
+```python
+client.open_spi_device(
+    device: str,
+    *,
+    mode: SpiMode = SpiMode.MODE_0,
+    max_speed_hz: int = 1_000_000,
+    bits_per_word: int = 8,
+    lsb_first: bool = False,
+    timeout: int = 5000,
+) -> SpiDevice
+```
+
+`transfer(data, *, speed_hz=None, delay_us=0, cs_change=False, timeout=0)`
+performs one full-duplex transaction and returns exactly one received byte per
+transmitted byte. `speed_hz=None` uses the speed configured when opening.
+
+```python
+from nrpc import NrpcClient, SpiMode
+
+with NrpcClient("192.0.2.30", 9000) as client:
+    with client.open_spi_device(
+        "/dev/spidev0.0", mode=SpiMode.MODE_0, max_speed_hz=1_000_000
+    ) as spi:
+        jedec_id = spi.transfer(b"\x9f\x00\x00\x00")[1:]
+        print(jedec_id.hex())
+```
+
+The server's device tree must expose the spidev node, and its process must
+have read/write permission for `/dev/spidev*`.
+
 ## NI-DAQmx backend
 
 NI-DAQmx tasks run inside the Windows server process; the Python client remains
@@ -658,7 +694,7 @@ except OSError as error:
 ```
 
 Server-reserved errors use codes `1001..1004`; TCP uses `2001..2007`, serial
-`3001..3008`, GPIO `4001..4007`, NI-DAQmx `5001..5006`, and LCard `6001..6007`. Refer to the server
+`3001..3008`, GPIO `4001..4007`, SPI `4501..4506`, NI-DAQmx `5001..5006`, and LCard `6001..6007`. Refer to the server
 README for the complete meanings and native runtime requirements.
 
 ## Architecture and wire behavior
@@ -695,11 +731,12 @@ python examples/basic_rpc.py --host 127.0.0.1 --port 9000
 python examples/tls_rpc.py --ca-cert server.crt --server-hostname nrpc.example.com
 python examples/tcp_scpi.py --device-host 192.0.2.10 --device-port 5025
 python examples/serial_scpi.py --port COM7 --baud-rate 115200
+python examples/spi_flash_id.py --device /dev/spidev0.0
 python examples/nidaqmx_voltage_input.py --channel Dev1/ai0 --samples 10
 python examples/lcard_raw_adc.py --slot 0 --channel 0
 ```
 
-TCP, serial, GPIO, NI-DAQmx, and LCard examples require the matching server-side
+TCP, serial, GPIO, SPI, NI-DAQmx, and LCard examples require the matching server-side
 equipment and runtime. The basic echo example only requires the sample server.
 
 ## Development and testing

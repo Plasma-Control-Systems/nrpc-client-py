@@ -45,6 +45,7 @@ from .protocols import (
     ProtocolTransportError,
 )
 from .gpio_backend import GpioDirection, GpioLine
+from .spi_backend import SpiDevice, SpiMode
 
 __version__ = "1.0.0"
 
@@ -54,6 +55,8 @@ __all__ = [
     "DataType",
     "GpioDirection",
     "GpioLine",
+    "SpiDevice",
+    "SpiMode",
     "NrpcClient",
     "NrpcError",
     "NrpcValue",
