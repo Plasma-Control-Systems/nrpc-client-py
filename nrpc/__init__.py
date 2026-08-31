@@ -6,6 +6,7 @@ from .client import (
     NrpcValue,
     ProtocolError,
     RemoteError,
+    ServerInfo,
     TypedValue,
 )
 from .nidaqmx_backend import (
@@ -85,6 +86,7 @@ __all__ = [
     "ProtocolTransaction",
     "ProtocolTransportError",
     "RemoteError",
+    "ServerInfo",
     "SerialBackend",
     "SerialFlowControl",
     "SerialParity",

@@ -9,6 +9,7 @@ class PublicApiTests(unittest.TestCase):
         self.assertNotIn("AsyncNrpcClient", nrpc.__all__)
         self.assertFalse(any(name.startswith("Async") for name in nrpc.__all__))
         self.assertIn("NrpcValue", nrpc.__all__)
+        self.assertIn("ServerInfo", nrpc.__all__)
         self.assertIn("SerialBackend", nrpc.__all__)
         self.assertIn("TcpBackend", nrpc.__all__)
         self.assertIn("GpioLine", nrpc.__all__)

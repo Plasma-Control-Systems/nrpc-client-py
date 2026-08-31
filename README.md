@@ -64,6 +64,11 @@ The sample server registers function `0` as an echo handler. A successful call
 confirms that the server is reachable and that framing and typed-value handling
 work end to end.
 
+Servers implementing discovery function `2` expose typed metadata through
+`NrpcClient.get_server_info()`: server and protocol versions, target platform,
+architecture, and sorted registered function indices. A server that returns
+remote error `1` for this method is a legacy peer without discovery support.
+
 ## Installation
 
 From the repository:

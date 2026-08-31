@@ -41,7 +41,7 @@ The proxies validate inputs locally, use explicit `TypedValue`s for fixed-width 
 
 Only symbols exported by `nrpc.__all__` are public:
 
-- Core: `NrpcClient`, `DataType`, `TypedValue`, `NrpcValue`, `NrpcError`, `ProtocolError`, `RemoteError`, `__version__`.
+- Core: `NrpcClient`, `ServerInfo`, `DataType`, `TypedValue`, `NrpcValue`, `NrpcError`, `ProtocolError`, `RemoteError`, `__version__`.
 - Protocols: `ByteTransport`, `ProtocolSession`, `ProtocolTransaction`, `ProtocolTransportError`, `ModbusTcpClient`, `ModbusRtuClient`, `ModbusError`, `ModbusProtocolError`, `ModbusException`.
 - TCP/serial: `TcpBackend`, `SerialBackend`, `SerialParity`, `SerialFlowControl`.
 - GPIO: `GpioLine`, `GpioDirection`.
@@ -55,6 +55,7 @@ Core signatures:
 NrpcClient(host, port, *, connect_timeout=10.0, max_payload_size=16*1024*1024,
            ssl_context=None, server_hostname=None)
 client.call(function_index, args=(), timeout=0) -> list[Any]
+client.get_server_info(timeout=1000) -> ServerInfo
 client.close() -> None
 ```
 

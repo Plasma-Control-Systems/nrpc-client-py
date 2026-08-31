@@ -82,6 +82,7 @@ class ProtocolError(NrpcError):
 _FUNCTION_NAMES = {
     0: "echo values",
     1: "sleep",
+    2: "get server information",
     16: "open TCP connection",
     17: "write to TCP connection",
     18: "read from TCP connection",
@@ -121,6 +122,7 @@ _ERROR_DESCRIPTIONS = {
     1: "unknown function index",
     2: "backend raised an exception",
     3: "sleep expects one uint32 duration",
+    4: "server info expects no arguments",
     1001: "nRPC protocol error",
     1002: "request timed out on the server",
     1003: "server response buffer is exhausted",
@@ -217,6 +219,17 @@ class TypedValue:
 
 
 NrpcValue: TypeAlias = NrpcScalar | bytearray | memoryview | TypedValue
+
+
+@dataclass(frozen=True)
+class ServerInfo:
+    """Metadata and registered functions reported by an nRPC server."""
+
+    server_version: str
+    protocol_version: int
+    platform: str
+    architecture: str
+    function_indices: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -447,6 +460,37 @@ class NrpcClient:
         if error != 0:
             raise ProtocolError("successful response contains an error code")
         return self._decode_payload(count, payload)
+
+    def get_server_info(self, *, timeout: int = 1000) -> ServerInfo:
+        """Return strictly validated discovery metadata from function 2."""
+
+        values = self.call(2, timeout=timeout)
+        if len(values) != 5:
+            raise ProtocolError("server info response must contain five values")
+        server_version, protocol_version, platform, architecture, indices = values
+        if not isinstance(server_version, str) or not server_version:
+            raise ProtocolError("server info version must be a non-empty string")
+        if type(protocol_version) is not int or protocol_version != VERSION:
+            raise ProtocolError("server info protocol version is invalid")
+        if platform not in ("windows", "linux"):
+            raise ProtocolError("server info platform must be windows or linux")
+        if not isinstance(architecture, str) or not architecture:
+            raise ProtocolError("server info architecture must be a non-empty string")
+        if not isinstance(indices, list) or not indices:
+            raise ProtocolError("server info function indices must be a non-empty list")
+        if any(type(index) is not int or not 0 <= index <= 255 for index in indices):
+            raise ProtocolError("server info contains an invalid function index")
+        if indices != sorted(set(indices)):
+            raise ProtocolError("server info function indices must be sorted and unique")
+        if 2 not in indices:
+            raise ProtocolError("server info does not advertise discovery function 2")
+        return ServerInfo(
+            server_version=server_version,
+            protocol_version=protocol_version,
+            platform=platform,
+            architecture=architecture,
+            function_indices=tuple(indices),
+        )
 
     def open_tcp_backend(
         self, host: str, port: int, *, timeout: int = 5000
