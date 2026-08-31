@@ -15,6 +15,8 @@ authoritative wire definition is [SPEC.md](SPEC.md).
 - all nRPC scalar types plus explicitly typed numeric and boolean arrays
 - connection-safe serialization of calls from multiple Python threads
 - context-managed TCP and serial equipment connections
+- reusable transaction infrastructure for binary device protocols
+- Modbus TCP and Modbus RTU clients
 - typed NI-DAQmx task and LCard device proxies
 - readable remote function and error descriptions
 - no third-party runtime dependencies
@@ -302,6 +304,106 @@ with NrpcClient("127.0.0.1", 9000) as client:
         serial.write(b"*IDN?\n", timeout=1000)
         print(serial.read_until(b"\n", timeout=1000))
 ```
+
+## Device protocol infrastructure
+
+`ByteTransport`, `ProtocolSession`, and `ProtocolTransaction` provide a small
+synchronous foundation for adding binary request/response protocols. Both
+`TcpBackend` and `SerialBackend` satisfy the `ByteTransport` protocol.
+
+A `ProtocolSession`:
+
+- serializes a complete write/read transaction, not just an individual nRPC
+  call;
+- applies one millisecond deadline to lock acquisition, write, and every read;
+- provides bounded `read` and fragmentation-safe `read_exactly` operations;
+- rejects short writes and invalid transport results;
+- leaves a caller-owned transport open unless `owns_transport=True`.
+
+Minimal proprietary protocol adapter:
+
+```python
+import struct
+
+from nrpc import ByteTransport, ProtocolSession
+
+
+class StatusProtocol:
+    def __init__(self, transport: ByteTransport):
+        self._session = ProtocolSession(transport, max_frame_size=256)
+
+    def read_status(self, *, timeout: int = 0) -> int:
+        with self._session.transaction(timeout=timeout) as transaction:
+            transaction.write(b"\x01\x00")
+            header = transaction.read_exactly(2)
+            payload_size = header[1]
+            payload = transaction.read_exactly(payload_size)
+        if header[0] != 0x81 or payload_size != 2:
+            raise ValueError("invalid status response")
+        return struct.unpack("!H", payload)[0]
+```
+
+Adapters should validate frame identifiers, declared sizes, checksums, echoed
+fields, and response limits before exposing decoded values. The infrastructure
+does not retry operations automatically because repeating a device write is
+not generally safe.
+
+## Modbus TCP and RTU
+
+`ModbusTcpClient` and `ModbusRtuClient` implement Modbus functions 01, 02, 03,
+04, 05, 06, 15, and 16. Addresses passed to the API are zero-based protocol
+addresses, not the human-facing `4xxxx` notation sometimes used in manuals.
+
+```python
+from nrpc import ModbusTcpClient, NrpcClient
+
+with NrpcClient("127.0.0.1", 9000) as client:
+    with client.open_tcp_backend("192.0.2.20", 502) as transport:
+        with ModbusTcpClient(transport, unit_id=1) as modbus:
+            values = modbus.read_holding_registers(100, 4, timeout=1000)
+            modbus.write_single_coil(12, True, timeout=1000)
+```
+
+RTU uses the same operation API over a serial backend:
+
+```python
+from nrpc import ModbusRtuClient, NrpcClient, SerialParity
+
+with NrpcClient("127.0.0.1", 9000) as client:
+    with client.open_serial_backend(
+        "COM7", baud_rate=19200, parity=SerialParity.EVEN
+    ) as transport:
+        with ModbusRtuClient(transport, unit_id=7) as modbus:
+            values = modbus.read_input_registers(0, 8, timeout=500)
+```
+
+Supported operations:
+
+| Method | Modbus function and limit |
+| --- | --- |
+| `read_coils(address, count)` | 01, 1..2000 bits |
+| `read_discrete_inputs(address, count)` | 02, 1..2000 bits |
+| `read_holding_registers(address, count)` | 03, 1..125 registers |
+| `read_input_registers(address, count)` | 04, 1..125 registers |
+| `write_single_coil(address, value)` | 05 |
+| `write_single_register(address, value)` | 06 |
+| `write_multiple_coils(address, values)` | 15, 1..1968 bits |
+| `write_multiple_registers(address, values)` | 16, 1..123 registers |
+
+TCP accepts unit identifiers `0..255`. RTU accepts slave addresses `0..247`;
+address zero is broadcast and is valid only for writes. A broadcast write does
+not wait for a response. Register values are raw unsigned 16-bit integers;
+device-specific word order and engineering-unit conversion belong in a higher
+level device adapter.
+
+Malformed MBAP fields, CRC failures, mismatched echoes, and unexpected response
+shapes raise `ModbusProtocolError`. A valid Modbus exception response raises
+`ModbusException`, exposing `function_code`, `exception_code`, and a readable
+`description`. Transport and nRPC errors retain their original exception types.
+
+The adapters do not close a separately managed TCP/serial proxy by default.
+Pass `owns_transport=True` only when the adapter is solely responsible for that
+proxy. One adapter must not share its transport with unrelated protocol code.
 
 ## NI-DAQmx backend
 

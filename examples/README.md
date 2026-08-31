@@ -71,6 +71,36 @@ python examples/serial_scpi.py \
 
 On Windows, use a port name such as `COM7`.
 
+## Modbus TCP
+
+Read holding registers through a TCP connection opened by the nRPC server:
+
+```sh
+python examples/modbus_tcp.py \
+  --nrpc-port 9000 \
+  --device-host 192.0.2.20 \
+  --unit-id 1 \
+  --address 100 \
+  --count 4
+```
+
+## Modbus RTU
+
+Read holding registers through a serial port opened by the nRPC server:
+
+```sh
+python examples/modbus_rtu.py \
+  --nrpc-port 9000 \
+  --port /dev/ttyUSB0 \
+  --baud-rate 19200 \
+  --unit-id 7 \
+  --address 0 \
+  --count 8
+```
+
+The RTU example uses 8 data bits, even parity, and one stop bit. Adjust the
+example if the slave uses a different serial configuration.
+
 ## NI-DAQmx Voltage Input
 
 On the Windows machine hosting the nRPC server, install the NI-DAQmx runtime

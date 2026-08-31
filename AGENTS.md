@@ -12,6 +12,8 @@ Do not add a runtime dependency without a strong reason. Do not reintroduce an a
 
 `nrpc/client.py` contains the wire codec, errors, `TypedValue`, and `NrpcClient`. `NrpcClient` opens one persistent socket, optionally wraps it with a caller-supplied `ssl.SSLContext`, and serializes calls with a `threading.Lock`. nRPC 0.1.0 allows one in-flight request per connection; callers needing concurrency must use separate `NrpcClient` instances.
 
+`nrpc/protocols/transport.py` provides the reusable synchronous `ByteTransport`/`ProtocolSession` transaction layer. `nrpc/protocols/modbus.py` implements Modbus TCP and RTU over the existing TCP and serial proxies. Device protocol adapters must lock the complete request/response exchange, use one end-to-end deadline, bound every frame, and keep device protocol errors distinct from nRPC `ProtocolError`.
+
 Backend modules are thin typed proxies over numeric RPC functions:
 
 | Module | Proxy | Function indices |
@@ -38,6 +40,7 @@ The proxies validate inputs locally, use explicit `TypedValue`s for fixed-width 
 Only symbols exported by `nrpc.__all__` are public:
 
 - Core: `NrpcClient`, `DataType`, `TypedValue`, `NrpcValue`, `NrpcError`, `ProtocolError`, `RemoteError`, `__version__`.
+- Protocols: `ByteTransport`, `ProtocolSession`, `ProtocolTransaction`, `ProtocolTransportError`, `ModbusTcpClient`, `ModbusRtuClient`, `ModbusError`, `ModbusProtocolError`, `ModbusException`.
 - TCP/serial: `TcpBackend`, `SerialBackend`, `SerialParity`, `SerialFlowControl`.
 - NI-DAQmx: `NidaqmxTask`, `NidaqmxChannelType`, `NidaqmxTerminalConfig`, `NidaqmxThermocoupleType`, `NidaqmxCjcSource`.
 - LCard: `LcardDevice`, `LcardDeviceInfo`, `LcardCapability`, `LcardAdcChannel`, `LcardAdcInputMode`, `LcardAdcFrame`, `LcardDacWriteResult`.
@@ -178,6 +181,7 @@ Tests use `unittest` and require no external packages:
 python -m unittest discover -s tests -v
 python -m unittest tests.test_codec -v
 python -m unittest tests.test_tcp_backend -v
+python -m unittest tests.test_protocol_transport tests.test_modbus -v
 ```
 
 Backend unit tests use fake clients and should assert exact function index, argument `DataType`, value, and timeout. TLS tests mock socket wrapping. Codec tests should cover valid round trips and malformed frames. `test_public_api.py` must be updated deliberately for public exports.

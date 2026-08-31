@@ -33,11 +33,23 @@ from .serial_backend import (
     SerialParity,
 )
 from .tcp_backend import TcpBackend
+from .protocols import (
+    ByteTransport,
+    ModbusError,
+    ModbusException,
+    ModbusProtocolError,
+    ModbusRtuClient,
+    ModbusTcpClient,
+    ProtocolSession,
+    ProtocolTransaction,
+    ProtocolTransportError,
+)
 
 __version__ = "1.0.0"
 
 __all__ = [
     "__version__",
+    "ByteTransport",
     "DataType",
     "NrpcClient",
     "NrpcError",
@@ -57,7 +69,15 @@ __all__ = [
     "LcardDacWriteResult",
     "LcardDevice",
     "LcardDeviceInfo",
+    "ModbusError",
+    "ModbusException",
+    "ModbusProtocolError",
+    "ModbusRtuClient",
+    "ModbusTcpClient",
     "ProtocolError",
+    "ProtocolSession",
+    "ProtocolTransaction",
+    "ProtocolTransportError",
     "RemoteError",
     "SerialBackend",
     "SerialFlowControl",
